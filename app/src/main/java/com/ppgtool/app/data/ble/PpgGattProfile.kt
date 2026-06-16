@@ -30,6 +30,7 @@ object PpgGattProfile {
     const val CMD_WIFI_LIST: Byte = 0x14
     const val CMD_WIFI_MODIFY: Byte = 0x15
     const val CMD_WIFI_PRIORITY: Byte = 0x16
+    const val CMD_TIME_SYNC: Byte = 0x40      // 时间同步
     const val CMD_OTA_ENTER: Byte = 0x20
     const val CMD_FW_VERSION: Byte = 0x21
     const val CMD_LOG_LEVEL: Byte = 0x30

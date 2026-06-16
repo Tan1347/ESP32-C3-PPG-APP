@@ -2,6 +2,7 @@ package com.ppgtool.app.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Settings
@@ -26,6 +27,13 @@ sealed class Screen(val route: String, val title: String) {
     data object OtaUpgrade : Screen("ota_upgrade", "OTA升级")
 }
 
+// 主页路由（显示底部导航栏）
+private val mainRoutes = setOf(
+    Screen.Monitor.route,
+    Screen.Data.route,
+    Screen.Settings.route
+)
+
 data class BottomNavItem(
     val screen: Screen,
     val icon: @Composable () -> Unit,
@@ -43,32 +51,51 @@ fun AppNavigation() {
         BottomNavItem(Screen.Settings, { Icon(Icons.Filled.Settings, contentDescription = null) }, "设置"),
     )
 
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
+    val isMainScreen = currentDestination?.route in mainRoutes
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PPG Monitor") },
+                title = {
+                    Text(
+                        when (currentDestination?.route) {
+                            Screen.WifiProvision.route -> Screen.WifiProvision.title
+                            Screen.OtaUpgrade.route -> Screen.OtaUpgrade.title
+                            else -> "PPG Monitor"
+                        }
+                    )
+                },
+                navigationIcon = {
+                    if (!isMainScreen) {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
         },
         bottomBar = {
-            NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-                bottomNavItems.forEach { item ->
-                    NavigationBarItem(
-                        icon = item.icon,
-                        label = { Text(item.label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == item.screen.route } == true,
-                        onClick = {
-                            navController.navigate(item.screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
+            if (isMainScreen) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        NavigationBarItem(
+                            icon = item.icon,
+                            label = { Text(item.label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == item.screen.route } == true,
+                            onClick = {
+                                navController.navigate(item.screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

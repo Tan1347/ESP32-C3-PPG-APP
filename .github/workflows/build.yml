@@ -1,0 +1,257 @@
+name: Weekly Build Check
+
+on:
+  schedule:
+    - cron: '0 16 * * 2'  # 每周二 UTC 16:00 = 北京时间 周三 00:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if build needed
+        id: check
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Current HEAD: $HEAD_SHA"
+
+          LATEST_TAG=$(git tag -l 'v*' --sort=-creatordate | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing release found, build needed"
+            echo "need_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TAG_SHA=$(git rev-parse "$LATEST_TAG^{}" 2>/dev/null || git rev-parse "$LATEST_TAG")
+          echo "Latest release tag: $LATEST_TAG ($TAG_SHA)"
+
+          if [ "$HEAD_SHA" = "$TAG_SHA" ]; then
+            echo "Latest commit already released, skipping build"
+            echo "need_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits found, build needed"
+            echo "need_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if release tag exists
+        if: steps.check.outputs.need_build == 'true'
+        id: tag
+        run: |
+          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="v${VERSION_NAME}-${SHORT_SHA}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 17
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ===== 缓存策略：分层缓存，精准命中 =====
+
+      # 1. Gradle 整体缓存（wrapper + 依赖 + 构建缓存一次性恢复）
+      - name: Restore Gradle cache
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/dists
+            ~/.gradle/native
+            .gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml', '**/*.gradle.kts') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+            gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+            gradle-${{ runner.os }}-
+
+      # 2. Android SDK 缓存（变化少，独立缓存）
+      - name: Cache Android SDK
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/build-tools/35.0.0
+          key: android-sdk-35.0.0
+
+      # 3. app/build 产物缓存（增量编译关键）
+      - name: Cache app build
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: actions/cache@v4
+        with:
+          path: app/build
+          key: app-build-${{ github.sha }}
+          restore-keys: |
+            app-build-${{ github.ref_name }}-
+            app-build-
+
+      - name: Setup Gradle
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-cleanup: never
+
+      # ===== 构建阶段 =====
+
+      - name: Decode release keystore
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > release.keystore
+            echo "Keystore decoded successfully"
+            ls -la release.keystore
+          else
+            echo "KEYSTORE_BASE64 secret not set, building unsigned APK"
+          fi
+
+      - name: Make gradlew executable
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        run: chmod +x ./gradlew
+
+      - name: Build Release APK
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --build-cache --stacktrace --no-daemon
+
+      # ===== 发布阶段 =====
+
+      - name: Generate release notes
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        id: notes
+        run: |
+          CURRENT_TAG="${{ steps.tag.outputs.tag }}"
+          # 排除当前 tag，按创建时间排序取上一个版本
+          PREV_TAG=$(git tag -l 'v*' --sort=-creatordate | grep -v "^${CURRENT_TAG}$" | head -n1)
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+            echo "Comparing: $PREV_TAG..HEAD"
+          else
+            RANGE="HEAD~10..HEAD"
+            echo "No previous tag, using last 10 commits"
+          fi
+
+          COMMITS=$(git log "$RANGE" --pretty=format:"%h %s" --no-merges -10 | while IFS= read -r line; do
+            # 限制每行200字符
+            if [ ${#line} -gt 200 ]; then
+              line="${line:0:197}..."
+            fi
+            echo "- $line"
+          done)
+
+          # 写入多行输出
+          {
+            echo "body<<EOF"
+            echo "## 更新内容"
+            echo ""
+            if [ -n "$COMMITS" ]; then
+              echo "$COMMITS"
+            else
+              echo "- 无提交记录"
+            fi
+            echo ""
+            echo "---"
+            echo "**版本**: v${{ steps.tag.outputs.version_name }}"
+            echo "**构建**: ${{ steps.tag.outputs.tag }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "v${{ steps.tag.outputs.version_name }}"
+          body: ${{ steps.notes.outputs.body }}
+          files: |
+            app/build/outputs/apk/release/*.apk
+          draft: false
+          prerelease: false
+
+      - name: Upload APK artifact
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-${{ steps.tag.outputs.tag }}
+          path: app/build/outputs/apk/release/*.apk
+
+      # ===== 缓存清理 =====
+
+      - name: Clean old Gradle caches
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Checking Gradle caches..."
+          # 保留最近 3 份 Gradle 缓存
+          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("gradle-"))] | sort_by(.created_at) | reverse | .[3:] | .[].id')
+          if [ -n "$CACHES" ]; then
+            COUNT=$(echo "$CACHES" | wc -l)
+            echo "Deleting $COUNT old Gradle cache(s)..."
+            echo "$CACHES" | while read -r id; do
+              gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
+            done
+          else
+            echo "No old Gradle caches to delete."
+          fi
+
+          # 保留最近 2 份 app build 缓存
+          BUILD_CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("app-build-"))] | sort_by(.created_at) | reverse | .[2:] | .[].id')
+          if [ -n "$BUILD_CACHES" ]; then
+            COUNT=$(echo "$BUILD_CACHES" | wc -l)
+            echo "Deleting $COUNT old build cache(s)..."
+            echo "$BUILD_CACHES" | while read -r id; do
+              gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
+            done
+          else
+            echo "No old build caches to delete."
+          fi
+
+      - name: Clean old releases (keep latest 10)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Checking releases..."
+          OLD_RELEASES=$(gh api repos/${{ github.repository }}/releases --paginate --jq '.[10:] | .[].id')
+          if [ -n "$OLD_RELEASES" ]; then
+            COUNT=$(echo "$OLD_RELEASES" | wc -l)
+            echo "Deleting $COUNT old release(s)..."
+            echo "$OLD_RELEASES" | while read -r id; do
+              gh api --method DELETE repos/${{ github.repository }}/releases/$id || true
+            done
+            echo "Done."
+          else
+            echo "No old releases to delete."
+          fi
+
+          # 同时删除旧的 release tags
+          OLD_TAGS=$(git tag -l 'v*' --sort=-creatordate | tail -n +11)
+          if [ -n "$OLD_TAGS" ]; then
+            echo "Deleting old tags: $OLD_TAGS"
+            for TAG in $OLD_TAGS; do
+              git push --delete origin "$TAG" 2>/dev/null || true
+            done
+          fi

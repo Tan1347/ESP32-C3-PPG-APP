@@ -28,6 +28,7 @@ sealed class ConnectionState {
 }
 
 @Singleton
+@Suppress("DEPRECATION")
 class BleManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
@@ -43,6 +44,11 @@ class BleManager @Inject constructor(
 
     private val _statusData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
     val statusData: SharedFlow<ByteArray> = _statusData.asSharedFlow()
+
+    // 用于 readCharacteristic 的异步等待
+    @Volatile
+    private var pendingReadUuid: UUID? = null
+    private var pendingReadContinuation: kotlin.coroutines.Continuation<ByteArray?>? = null
 
     @SuppressLint("MissingPermission")
     fun scan(): Flow<BleDevice> = callbackFlow {
@@ -91,7 +97,7 @@ class BleManager @Inject constructor(
                             bluetoothGatt = gatt
                             _connectionState.value = ConnectionState.Connected(device)
                             gatt.discoverServices()
-                            if (continuation.isActive) continuation.resume(true)
+                            // 不在这里 resume，等待 services 发现完成
                         }
                         BluetoothProfile.STATE_DISCONNECTED -> {
                             _connectionState.value = ConnectionState.Disconnected
@@ -104,6 +110,11 @@ class BleManager @Inject constructor(
                 override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         enableNotifications(gatt)
+                        // Services 发现完成，现在才返回 true
+                        if (continuation.isActive) continuation.resume(true)
+                    } else {
+                        // Services 发现失败
+                        if (continuation.isActive) continuation.resume(false)
                     }
                 }
 
@@ -123,6 +134,14 @@ class BleManager @Inject constructor(
                         when (characteristic.uuid) {
                             PpgGattProfile.CHAR_STATUS -> characteristic.value?.let { _statusData.tryEmit(it) }
                         }
+                    }
+
+                    // 处理 readCharacteristic 的异步结果
+                    if (characteristic.uuid == pendingReadUuid) {
+                        val value = if (status == BluetoothGatt.GATT_SUCCESS) characteristic.value else null
+                        pendingReadContinuation?.resume(value)
+                        pendingReadContinuation = null
+                        pendingReadUuid = null
                     }
                 }
             }
@@ -170,8 +189,19 @@ class BleManager @Inject constructor(
         val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return null
         val char = service.getCharacteristic(uuid) ?: return null
 
-        gatt.readCharacteristic(char)
-        return char.value
+        // 设置临时特征读取标记
+        pendingReadUuid = uuid
+
+        return suspendCancellableCoroutine { continuation ->
+            pendingReadContinuation = continuation
+            gatt.readCharacteristic(char)
+
+            // 超时处理
+            continuation.invokeOnCancellation {
+                pendingReadContinuation = null
+                pendingReadUuid = null
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -184,5 +214,21 @@ class BleManager @Inject constructor(
 
     fun isConnected(): Boolean {
         return _connectionState.value is ConnectionState.Connected
+    }
+
+    /**
+     * 同步时间到设备
+     * @param timestamp Unix 10 位时间戳（秒）
+     * @return 是否发送成功
+     */
+    suspend fun syncTime(timestamp: Long): Boolean {
+        // 命令格式: [0x40][timestamp_byte3][timestamp_byte2][timestamp_byte1][timestamp_byte0]
+        val cmd = ByteArray(5)
+        cmd[0] = PpgGattProfile.CMD_TIME_SYNC
+        cmd[1] = (timestamp shr 24).toByte()
+        cmd[2] = (timestamp shr 16).toByte()
+        cmd[3] = (timestamp shr 8).toByte()
+        cmd[4] = timestamp.toByte()
+        return writeCommand(cmd)
     }
 }

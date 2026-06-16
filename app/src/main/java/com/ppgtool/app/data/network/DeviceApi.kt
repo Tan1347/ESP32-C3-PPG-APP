@@ -1,5 +1,6 @@
 package com.ppgtool.app.data.network
 
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.*
 
@@ -20,7 +21,7 @@ interface DeviceApi {
 
     @Streaming
     @POST("/api/ota")
-    suspend fun uploadFirmware(@Body body: ResponseBody): ResponseBody
+    suspend fun uploadFirmware(@Body body: RequestBody): ResponseBody
 
     @GET("/api/logs")
     suspend fun getLogList(): LogListResponse

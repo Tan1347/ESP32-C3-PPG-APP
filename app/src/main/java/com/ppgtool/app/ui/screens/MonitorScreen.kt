@@ -5,8 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +28,13 @@ fun MonitorScreen(
 ) {
     val ppgData by viewModel.ppgData.collectAsState()
     val isMeasuring by viewModel.isMeasuring.collectAsState()
+    val deviceStatus by viewModel.deviceStatus.collectAsState()
+
+    // 启动设备状态轮询
+    LaunchedEffect(Unit) {
+        viewModel.fetchDeviceStatus()
+        viewModel.startStatusPolling()
+    }
 
     Column(
         modifier = Modifier
@@ -44,6 +50,14 @@ fun MonitorScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
+        )
+
+        // 设备状态卡片
+        DeviceStatusCard(
+            battery = deviceStatus.battery,
+            firmwareVersion = deviceStatus.firmwareVersion,
+            sdFreeMb = deviceStatus.sdFreeMb,
+            isOnline = deviceStatus.isOnline
         )
 
         // 数据卡片
@@ -146,6 +160,85 @@ fun MetricCard(
                         modifier = Modifier.padding(bottom = 6.dp, start = 4.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun DeviceStatusCard(
+    battery: com.ppgtool.app.data.network.BatteryInfo?,
+    firmwareVersion: String,
+    sdFreeMb: Int,
+    isOnline: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isOnline) MaterialTheme.colorScheme.surfaceVariant
+            else MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // 电量
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    when {
+                        battery == null -> Icons.Filled.BatteryUnknown
+                        battery.soc >= 80 -> Icons.Filled.BatteryFull
+                        battery.soc >= 50 -> Icons.Filled.Battery5Bar
+                        battery.soc >= 30 -> Icons.Filled.Battery3Bar
+                        battery.soc >= 10 -> Icons.Filled.Battery1Bar
+                        else -> Icons.Filled.Battery0Bar
+                    },
+                    contentDescription = null,
+                    tint = when {
+                        battery == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        battery.soc >= 30 -> SpO2Normal
+                        battery.soc >= 10 -> SpO2Warning
+                        else -> SpO2Danger
+                    },
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    if (battery != null) "${battery.soc}%" else "--",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // 固件版本
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Filled.Memory,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    firmwareVersion.ifBlank { "--" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // SD 卡
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Filled.SdStorage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    if (sdFreeMb > 0) "${sdFreeMb}MB" else "--",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

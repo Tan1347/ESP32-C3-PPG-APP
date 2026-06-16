@@ -1,93 +1,279 @@
 package com.ppgtool.app.ui.screens
 
+import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.ppgtool.app.data.wifi.WifiNetwork
+import com.ppgtool.app.viewmodel.ConnectionResult
+import com.ppgtool.app.viewmodel.WifiProvisionViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WifiProvisionScreen(navController: NavController) {
-    var ssid by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var isConnected by remember { mutableStateOf(false) }
-    var connectedSsid by remember { mutableStateOf("") }
-    var deviceIp by remember { mutableStateOf("") }
+fun WifiProvisionScreen(
+    navController: NavController,
+    viewModel: WifiProvisionViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val state by viewModel.state.collectAsState()
+
+    // 显示错误提示
+    LaunchedEffect(state.error) {
+        state.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+
+    // 显示连接结果
+    LaunchedEffect(state.connectionResult) {
+        state.connectionResult?.let {
+            when (it) {
+                is ConnectionResult.Success -> Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
+                is ConnectionResult.Error -> Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
+            }
+            viewModel.clearResult()
+        }
+    }
+
+    // WiFi 密码输入对话框
+    if (state.selectedNetwork != null) {
+        WifiPasswordDialog(
+            network = state.selectedNetwork!!,
+            password = state.password,
+            onPasswordChange = { viewModel.updatePassword(it) },
+            onConfirm = { viewModel.sendWifiCredentials() },
+            onDismiss = { viewModel.dismissSelection() },
+            isConnecting = state.isConnecting
+        )
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 当前状态
-        Card(
+        // 扫描按钮
+        Button(
+            onClick = { viewModel.scanNetworks() },
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.errorContainer
-            )
+            enabled = !state.isScanning
         ) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (isConnected) Icons.Filled.Wifi else Icons.Filled.WifiOff,
-                    contentDescription = null
+            if (state.isScanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
                 )
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(if (isConnected) "已连接" else "未连接", style = MaterialTheme.typography.titleMedium)
-                    if (isConnected) {
-                        Text("SSID: $connectedSsid", style = MaterialTheme.typography.bodySmall)
-                        Text("IP: $deviceIp", style = MaterialTheme.typography.bodySmall)
-                    }
+                Spacer(Modifier.width(8.dp))
+                Text("正在扫描...")
+            } else {
+                Icon(Icons.Filled.WifiFind, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("扫描 2.4GHz WiFi")
+            }
+        }
+
+        // 网络列表
+        if (state.networks.isNotEmpty()) {
+            Text(
+                "发现 ${state.networks.size} 个网络",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(
+                    items = state.networks,
+                    key = { it.ssid }
+                ) { network ->
+                    WifiNetworkItem(
+                        network = network,
+                        onClick = { viewModel.selectNetwork(network) }
+                    )
+                }
+            }
+        } else if (!state.isScanning) {
+            // 空状态
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Filled.WifiOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("点击上方按钮扫描附近 WiFi")
                 }
             }
         }
+    }
+}
 
-        HorizontalDivider()
-
-        Text("添加 WiFi 网络", style = MaterialTheme.typography.titleMedium)
-
-        OutlinedTextField(
-            value = ssid,
-            onValueChange = { ssid = it },
-            label = { Text("WiFi 名称 (SSID)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("密码") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Button(
-            onClick = { /* BLE 发送 WiFi 凭据 */ },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = ssid.isNotEmpty()
+@Composable
+private fun WifiNetworkItem(
+    network: WifiNetwork,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Send, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("发送到设备")
-        }
+            // 信号强度图标
+            Icon(
+                when (network.signalLevel) {
+                    4 -> Icons.Filled.Wifi
+                    3 -> Icons.Filled.Wifi
+                    2 -> Icons.Filled.Wifi
+                    1 -> Icons.Filled.WifiFind
+                    else -> Icons.Filled.WifiOff
+                },
+                contentDescription = null,
+                tint = when {
+                    network.signalLevel >= 3 -> MaterialTheme.colorScheme.primary
+                    network.signalLevel >= 2 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.error
+                },
+                modifier = Modifier.size(28.dp)
+            )
 
-        HorizontalDivider()
+            Spacer(Modifier.width(12.dp))
 
-        Text("已保存的 WiFi", style = MaterialTheme.typography.titleMedium)
+            // 网络信息
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    network.ssid,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    buildString {
+                        append("${network.frequency / 1000} MHz")
+                        if (network.isSecure) append(" · 已加密")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-        // TODO: 显示设备已保存的 WiFi 列表
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.padding(16.dp)) {
-                Icon(Icons.Filled.Info, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Text("连接设备后可查看已保存的 WiFi 列表")
+            // 安全状态
+            if (network.isSecure) {
+                Icon(
+                    Icons.Filled.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
+}
+
+@Composable
+private fun WifiPasswordDialog(
+    network: WifiNetwork,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    isConnecting: Boolean
+) {
+    var showPassword by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isConnecting) onDismiss() },
+        title = { Text("连接到 ${network.ssid}") },
+        text = {
+            Column {
+                Text(
+                    "信号强度: ${
+                        when (network.signalLevel) {
+                            4 -> "强"
+                            3 -> "较强"
+                            2 -> "中等"
+                            1 -> "较弱"
+                            else -> "弱"
+                        }
+                    }",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                if (network.isSecure) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = onPasswordChange,
+                        label = { Text("密码") },
+                        singleLine = true,
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    if (showPassword) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isConnecting
+                    )
+                } else {
+                    Text("这是一个开放网络，无需密码")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !isConnecting && (!network.isSecure || password.isNotEmpty())
+            ) {
+                if (isConnecting) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(4.dp))
+                    Text("发送中...")
+                } else {
+                    Text("连接")
+                }
+            }
+        },
+        dismissButton = {
+            if (!isConnecting) {
+                TextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        }
+    )
 }

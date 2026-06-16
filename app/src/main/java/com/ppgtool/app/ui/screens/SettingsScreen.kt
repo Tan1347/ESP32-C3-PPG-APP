@@ -1,5 +1,6 @@
 package com.ppgtool.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -8,14 +9,77 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.ppgtool.app.data.network.ReleaseInfo
+import com.ppgtool.app.ui.components.InstallConfirmDialog
+import com.ppgtool.app.ui.components.DownloadProgressDialog
+import com.ppgtool.app.ui.components.UpdateAvailableDialog
 import com.ppgtool.app.ui.navigation.Screen
+import com.ppgtool.app.viewmodel.SettingsViewModel
+import com.ppgtool.app.viewmodel.TimeSyncResult
 
 @Composable
-fun SettingsScreen(navController: NavController) {
+fun SettingsScreen(
+    navController: NavController,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val updateState by viewModel.updateState.collectAsState()
+    val timeSyncState by viewModel.timeSyncState.collectAsState()
+
+    // 显示更新对话框
+    if (updateState.showDialog && updateState.releaseInfo != null) {
+        UpdateAvailableDialog(
+            releaseInfo = updateState.releaseInfo!!,
+            currentVersion = viewModel.getCurrentVersion(),
+            onUpdate = { viewModel.startUpdate() },
+            onDismiss = { viewModel.dismissUpdateDialog() }
+        )
+    }
+
+    // 显示下载进度对话框
+    if (updateState.isDownloading) {
+        DownloadProgressDialog(
+            progress = updateState.progress,
+            progressText = updateState.progressText,
+            onDismiss = { viewModel.dismissProgressDialog() }
+        )
+    }
+
+    // 显示安装确认对话框
+    if (updateState.showInstallDialog) {
+        InstallConfirmDialog(
+            onInstall = { viewModel.installUpdate() },
+            onDismiss = { viewModel.dismissInstallDialog() }
+        )
+    }
+
+    // 显示错误提示
+    LaunchedEffect(updateState.error) {
+        updateState.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+
+    // 显示时间同步结果
+    LaunchedEffect(timeSyncState.result) {
+        timeSyncState.result?.let {
+            when (it) {
+                is TimeSyncResult.Success -> Toast.makeText(context, "时间同步成功: ${it.timeStr}", Toast.LENGTH_LONG).show()
+                is TimeSyncResult.Error -> Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
+            }
+            viewModel.clearTimeSyncResult()
+        }
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text("设备设置", style = MaterialTheme.typography.titleMedium)
@@ -37,40 +101,21 @@ fun SettingsScreen(navController: NavController) {
         SettingsItem(
             icon = Icons.Filled.Schedule,
             title = "同步时间",
-            subtitle = "将手机时间同步到设备",
-            onClick = { }
-        )
-
-        SettingsItem(
-            icon = Icons.Filled.Tune,
-            title = "设备参数",
-            subtitle = "采样率、LED 电流等",
-            onClick = { }
+            subtitle = if (timeSyncState.isSyncing) "正在同步..." else {
+                if (timeSyncState.lastSyncTime.isNotEmpty()) "上次同步: ${timeSyncState.lastSyncTime}" else "将手机时间同步到设备"
+            },
+            onClick = { viewModel.syncTime() }
         )
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-        Text("应用设置", style = MaterialTheme.typography.titleMedium)
+        Text("关于", style = MaterialTheme.typography.titleMedium)
 
         SettingsItem(
-            icon = Icons.Filled.Palette,
-            title = "主题",
-            subtitle = "深色 / 浅色",
-            onClick = { }
-        )
-
-        SettingsItem(
-            icon = Icons.Filled.Notifications,
-            title = "通知",
-            subtitle = "测量完成提醒",
-            onClick = { }
-        )
-
-        SettingsItem(
-            icon = Icons.Filled.Folder,
-            title = "存储路径",
-            subtitle = "下载文件保存位置",
-            onClick = { }
+            icon = Icons.Filled.Update,
+            title = "检查更新",
+            subtitle = if (updateState.isChecking) "正在检查..." else "当前版本: ${viewModel.getCurrentVersion()}",
+            onClick = { viewModel.checkForUpdate() }
         )
     }
 }
