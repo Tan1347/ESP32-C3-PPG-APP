@@ -52,6 +52,9 @@ class MonitorViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
 
+    val isConnected: Boolean
+        get() = bleManager.connectionState.value is ConnectionState.Connected
+
     private val _ppgData = MutableStateFlow(PpgData())
     val ppgData: StateFlow<PpgData> = _ppgData.asStateFlow()
 

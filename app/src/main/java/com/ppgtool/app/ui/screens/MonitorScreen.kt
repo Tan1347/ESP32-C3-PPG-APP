@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,17 +19,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ppgtool.app.data.ble.ConnectionState
 import com.ppgtool.app.ui.theme.*
 import com.ppgtool.app.viewmodel.MonitorViewModel
 import com.ppgtool.app.viewmodel.PpgData
 
 @Composable
 fun MonitorScreen(
-    viewModel: MonitorViewModel = hiltViewModel()
+    viewModel: MonitorViewModel = hiltViewModel(),
+    onNavigateToDevice: () -> Unit = {}
 ) {
     val ppgData by viewModel.ppgData.collectAsState()
     val isMeasuring by viewModel.isMeasuring.collectAsState()
     val deviceStatus by viewModel.deviceStatus.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isConnected = connectionState is ConnectionState.Connected
 
     // 启动设备状态轮询
     LaunchedEffect(Unit) {
@@ -108,12 +113,27 @@ fun MonitorScreen(
         // 控制按钮
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
+            // 连接设备按钮
+            if (!isConnected) {
+                Button(
+                    onClick = onNavigateToDevice,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Filled.Bluetooth, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("连接设备")
+                }
+            }
+
+            // 测量按钮
             Button(
                 onClick = { if (isMeasuring) viewModel.stopMeasuring() else viewModel.startMeasuring() },
+                enabled = isConnected,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isMeasuring) PpgRed else PpgGreen
+                    containerColor = if (isMeasuring) PpgRed else PpgGreen,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
                 Icon(
@@ -188,7 +208,7 @@ fun DeviceStatusCard(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     when {
-                        battery == null -> Icons.Filled.BatteryUnknown
+                        battery == null -> Icons.AutoMirrored.Filled.BatteryUnknown
                         battery.soc >= 80 -> Icons.Filled.BatteryFull
                         battery.soc >= 50 -> Icons.Filled.Battery5Bar
                         battery.soc >= 30 -> Icons.Filled.Battery3Bar

@@ -39,4 +39,11 @@ object PpgGattProfile {
 
     // 设备名前缀
     const val DEVICE_NAME_PREFIX = "PPG-Monitor"
+
+    // 支持的设备名前缀列表（用于扫描过滤）
+    val DEVICE_NAME_PREFIXES = listOf(
+        "PPG-Monitor",
+        "ESP32",
+        "PPG"
+    )
 }

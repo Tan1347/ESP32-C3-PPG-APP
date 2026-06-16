@@ -50,7 +50,7 @@ class DeviceViewModel @Inject constructor(
                 android.bluetooth.BluetoothAdapter.getDefaultAdapter()
                     ?.getRemoteDevice(device.address)
             }
-            btDevice?.let { bleManager.connect(it) }
+            btDevice?.let { bleManager.connect(it, device.name) }
         }
     }
 

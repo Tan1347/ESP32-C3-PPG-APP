@@ -106,7 +106,11 @@ fun AppNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Device.route) { DeviceScreen(navController) }
-            composable(Screen.Monitor.route) { MonitorScreen() }
+            composable(Screen.Monitor.route) {
+                MonitorScreen(
+                    onNavigateToDevice = { navController.navigate(Screen.Device.route) }
+                )
+            }
             composable(Screen.Data.route) { DataScreen() }
             composable(Screen.Settings.route) { SettingsScreen(navController) }
             composable(Screen.WifiProvision.route) { WifiProvisionScreen(navController) }

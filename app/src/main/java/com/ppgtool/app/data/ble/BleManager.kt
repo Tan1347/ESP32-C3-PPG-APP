@@ -23,7 +23,7 @@ data class BleDevice(
 sealed class ConnectionState {
     data object Disconnected : ConnectionState()
     data object Connecting : ConnectionState()
-    data class Connected(val device: BluetoothDevice) : ConnectionState()
+    data class Connected(val device: BluetoothDevice, val deviceName: String = "") : ConnectionState()
     data class Error(val message: String) : ConnectionState()
 }
 
@@ -62,7 +62,8 @@ class BleManager @Inject constructor(
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
                 val name = result.scanRecord?.deviceName ?: device.name ?: "Unknown"
-                if (name.startsWith(PpgGattProfile.DEVICE_NAME_PREFIX)) {
+                // 过滤支持的设备名前缀
+                if (PpgGattProfile.DEVICE_NAME_PREFIXES.any { prefix -> name.startsWith(prefix) }) {
                     trySend(BleDevice(name, device.address, result.rssi))
                 }
             }
@@ -86,7 +87,7 @@ class BleManager @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun connect(device: BluetoothDevice): Boolean {
+    suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
         _connectionState.value = ConnectionState.Connecting
 
         return suspendCancellableCoroutine { continuation ->
@@ -95,7 +96,7 @@ class BleManager @Inject constructor(
                     when (newState) {
                         BluetoothProfile.STATE_CONNECTED -> {
                             bluetoothGatt = gatt
-                            _connectionState.value = ConnectionState.Connected(device)
+                            _connectionState.value = ConnectionState.Connected(device, deviceName)
                             gatt.discoverServices()
                             // 不在这里 resume，等待 services 发现完成
                         }
