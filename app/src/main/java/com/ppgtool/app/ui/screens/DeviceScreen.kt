@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.ppgtool.app.data.ble.BleDevice
 import com.ppgtool.app.data.ble.ConnectionState
+import com.ppgtool.app.data.ble.PpgGattProfile
 import com.ppgtool.app.viewmodel.DeviceViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,16 +59,18 @@ fun DeviceScreen(
         }
     }
 
-    // 设备筛选状态
-    var selectedFilter by remember { mutableStateOf("全部") }
-    val filterOptions = listOf("全部", "PPG-Monitor", "ESP32", "PPG")
-
-    // 根据筛选条件过滤设备
-    val filteredDevices = if (selectedFilter == "全部") {
-        devices
-    } else {
-        devices.filter { it.name.startsWith(selectedFilter) }
+    // 判断设备是否匹配前缀
+    fun isMatchingDevice(device: BleDevice): Boolean {
+        return PpgGattProfile.DEVICE_NAME_PREFIXES.any { prefix ->
+            device.name.startsWith(prefix, ignoreCase = true)
+        }
     }
+
+    // 排序：匹配设备置顶，然后按信号强度排序
+    val sortedDevices = devices.sortedWith(
+        compareByDescending<BleDevice> { isMatchingDevice(it) }
+            .thenByDescending { it.rssi }
+    )
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // 连接状态
@@ -138,25 +141,6 @@ fun DeviceScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // 设备筛选
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("设备类型:", style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.width(8.dp))
-            filterOptions.forEach { filter ->
-                FilterChip(
-                    selected = selectedFilter == filter,
-                    onClick = { selectedFilter = filter },
-                    label = { Text(filter) },
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
         // 设备列表
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -164,11 +148,13 @@ fun DeviceScreen(
         ) {
             Text("发现的设备", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(8.dp))
-            Text("(${filteredDevices.size})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("(${sortedDevices.size})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text("匹配设备置顶", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.height(8.dp))
 
-        if (filteredDevices.isEmpty()) {
+        if (sortedDevices.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -192,13 +178,53 @@ fun DeviceScreen(
                 }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(
-                    items = filteredDevices,
-                    key = { it.address }
-                ) { device ->
-                    DeviceListItem(device = device) {
-                        viewModel.connect(device)
+            val matchedDevices = sortedDevices.filter { isMatchingDevice(it) }
+            val otherDevices = sortedDevices.filter { !isMatchingDevice(it) }
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 匹配设备
+                if (matchedDevices.isNotEmpty()) {
+                    item {
+                        Text(
+                            "可连接设备",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                    items(
+                        items = matchedDevices,
+                        key = { it.address }
+                    ) { device ->
+                        DeviceListItem(
+                            device = device,
+                            isMatch = true
+                        ) {
+                            viewModel.connect(device)
+                        }
+                    }
+                }
+
+                // 其他设备
+                if (otherDevices.isNotEmpty()) {
+                    item {
+                        Text(
+                            "其他设备",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                    items(
+                        items = otherDevices,
+                        key = { it.address }
+                    ) { device ->
+                        DeviceListItem(
+                            device = device,
+                            isMatch = false
+                        ) {
+                            viewModel.connect(device)
+                        }
                     }
                 }
             }
@@ -207,19 +233,32 @@ fun DeviceScreen(
 }
 
 @Composable
-fun DeviceListItem(device: BleDevice, onClick: () -> Unit) {
+fun DeviceListItem(device: BleDevice, isMatch: Boolean = false, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = if (isMatch) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Bluetooth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                if (isMatch) Icons.Filled.CheckCircle else Icons.Filled.Bluetooth,
+                contentDescription = null,
+                tint = if (isMatch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(device.name, style = MaterialTheme.typography.bodyLarge)
                 Text(device.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (isMatch) {
+                Text("可连接", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
             }
             Text("${device.rssi} dBm", style = MaterialTheme.typography.bodySmall)
         }

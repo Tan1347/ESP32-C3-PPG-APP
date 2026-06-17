@@ -5,6 +5,7 @@ import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Context
 import android.os.ParcelUuid
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
@@ -13,6 +14,8 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+
+private const val TAG = "BleManager"
 
 data class BleDevice(
     val name: String,
@@ -50,40 +53,121 @@ class BleManager @Inject constructor(
     private var pendingReadUuid: UUID? = null
     private var pendingReadContinuation: kotlin.coroutines.Continuation<ByteArray?>? = null
 
+    // 扫描相关
+    private var currentScanner: BluetoothLeScanner? = null
+    private var currentScanCallback: ScanCallback? = null
+
+    /**
+     * 扫描 BLE 设备
+     * @param useUuidFilter 是否使用 UUID 过滤（默认 false，扫描所有设备）
+     */
     @SuppressLint("MissingPermission")
-    fun scan(): Flow<BleDevice> = callbackFlow {
+    fun scan(useUuidFilter: Boolean = false): Flow<BleDevice> = callbackFlow {
         val scanner = bluetoothAdapter?.bluetoothLeScanner
         if (scanner == null) {
+            Log.e(TAG, "BLE Scanner 不可用，蓝牙是否开启？")
             close()
             return@callbackFlow
         }
+
+        // 保存 scanner 引用用于停止扫描
+        currentScanner = scanner
+
+        Log.i(TAG, "开始扫描 BLE 设备，UUID 过滤: $useUuidFilter")
+        Log.i(TAG, "支持的设备名前缀: ${PpgGattProfile.DEVICE_NAME_PREFIXES}")
+
+        var totalResults = 0
+        var uniqueDevices = mutableSetOf<String>()  // 用地址去重
+        var matchedDevices = mutableSetOf<String>()
 
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
                 val name = result.scanRecord?.deviceName ?: device.name ?: "Unknown"
-                // 过滤支持的设备名前缀
-                if (PpgGattProfile.DEVICE_NAME_PREFIXES.any { prefix -> name.startsWith(prefix) }) {
-                    trySend(BleDevice(name, device.address, result.rssi))
+                val address = device.address
+
+                totalResults++
+
+                // 判断是否为新设备
+                val isNewDevice = uniqueDevices.add(address)
+
+                // 发送所有设备到 UI
+                val isMatch = PpgGattProfile.DEVICE_NAME_PREFIXES.any { prefix ->
+                    name.startsWith(prefix, ignoreCase = true)
                 }
+                if (isMatch) {
+                    matchedDevices.add(address)
+                    if (isNewDevice) {
+                        Log.i(TAG, "✓ 匹配设备: $name ($address)")
+                    }
+                }
+                trySend(BleDevice(name, address, result.rssi))
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                Log.e(TAG, "扫描失败，错误码: $errorCode")
+                when (errorCode) {
+                    SCAN_FAILED_ALREADY_STARTED -> Log.e(TAG, "扫描已在进行中")
+                    SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> Log.e(TAG, "应用注册失败")
+                    SCAN_FAILED_INTERNAL_ERROR -> Log.e(TAG, "内部错误")
+                    SCAN_FAILED_FEATURE_UNSUPPORTED -> Log.e(TAG, "功能不支持")
+                }
+                currentScanner = null
+                currentScanCallback = null
+                close()
             }
         }
 
-        val filters = listOf(
-            ScanFilter.Builder()
-                .setServiceUuid(ParcelUuid(PpgGattProfile.SERVICE_UUID))
-                .build()
-        )
+        currentScanCallback = callback
+
+        // 根据参数决定是否使用 UUID 过滤
+        val filters = if (useUuidFilter) {
+            listOf(
+                ScanFilter.Builder()
+                    .setServiceUuid(ParcelUuid(PpgGattProfile.SERVICE_UUID))
+                    .build()
+            )
+        } else {
+            emptyList()  // 不使用过滤器，扫描所有设备
+        }
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .build()
 
+        Log.i(TAG, "启动扫描，过滤器数量: ${filters.size}")
         scanner.startScan(filters, settings, callback)
 
         awaitClose {
-            scanner.stopScan(callback)
+            Log.i(TAG, "停止扫描，共 ${uniqueDevices.size} 个唯一设备，${matchedDevices.size} 个匹配，$totalResults 次回调")
+            try {
+                scanner.stopScan(callback)
+            } catch (e: Exception) {
+                Log.e(TAG, "停止扫描异常: ${e.message}")
+            }
+            currentScanner = null
+            currentScanCallback = null
         }
+    }
+
+    /**
+     * 停止 BLE 扫描
+     */
+    @SuppressLint("MissingPermission")
+    fun stopScan() {
+        Log.i(TAG, "手动停止扫描")
+        val scanner = currentScanner
+        val callback = currentScanCallback
+        if (scanner != null && callback != null) {
+            try {
+                scanner.stopScan(callback)
+                Log.i(TAG, "扫描已停止")
+            } catch (e: Exception) {
+                Log.e(TAG, "停止扫描异常: ${e.message}")
+            }
+        }
+        currentScanner = null
+        currentScanCallback = null
     }
 
     @SuppressLint("MissingPermission")

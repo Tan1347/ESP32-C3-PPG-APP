@@ -66,25 +66,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ===== 缓存策略：分层缓存，精准命中 =====
+      # ===== 缓存策略 =====
 
-      # 1. Gradle 整体缓存（wrapper + 依赖 + 构建缓存一次性恢复）
-      - name: Restore Gradle cache
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper/dists
-            ~/.gradle/native
-            .gradle
-          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml', '**/*.gradle.kts') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-            gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-            gradle-${{ runner.os }}-
-
-      # 2. Android SDK 缓存（变化少，独立缓存）
+      # 1. Android SDK 缓存（setup-gradle 不管理，需手动缓存）
       - name: Cache Android SDK
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: actions/cache@v4
@@ -92,7 +76,7 @@ jobs:
           path: /usr/local/lib/android/sdk/build-tools/35.0.0
           key: android-sdk-35.0.0
 
-      # 3. app/build 产物缓存（增量编译关键）
+      # 2. app/build 产物缓存（增量编译关键）
       - name: Cache app build
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: actions/cache@v4
@@ -103,6 +87,7 @@ jobs:
             app-build-${{ github.ref_name }}-
             app-build-
 
+      # 3. Gradle 缓存由 setup-gradle 自动管理
       - name: Setup Gradle
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: gradle/actions/setup-gradle@v4
@@ -199,35 +184,47 @@ jobs:
 
       # ===== 缓存清理 =====
 
-      - name: Clean old Gradle caches
+      - name: Clean old caches
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Checking Gradle caches..."
-          # 保留最近 3 份 Gradle 缓存
-          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("gradle-"))] | sort_by(.created_at) | reverse | .[3:] | .[].id')
+          echo "Cleaning old caches..."
+
+          # 清理所有旧缓存，只保留最新的
+          # 1. 清理 gradle-home 缓存（保留最新 1 份）
+          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("gradle-home-"))] | sort_by(.created_at) | reverse | .[1:] | .[].id')
           if [ -n "$CACHES" ]; then
             COUNT=$(echo "$CACHES" | wc -l)
-            echo "Deleting $COUNT old Gradle cache(s)..."
+            echo "Deleting $COUNT old gradle-home cache(s)..."
             echo "$CACHES" | while read -r id; do
               gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
             done
-          else
-            echo "No old Gradle caches to delete."
           fi
 
-          # 保留最近 2 份 app build 缓存
-          BUILD_CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("app-build-"))] | sort_by(.created_at) | reverse | .[2:] | .[].id')
-          if [ -n "$BUILD_CACHES" ]; then
-            COUNT=$(echo "$BUILD_CACHES" | wc -l)
-            echo "Deleting $COUNT old build cache(s)..."
-            echo "$BUILD_CACHES" | while read -r id; do
+          # 2. 清理 app-build 缓存（保留最新 2 份）
+          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("app-build-"))] | sort_by(.created_at) | reverse | .[2:] | .[].id')
+          if [ -n "$CACHES" ]; then
+            COUNT=$(echo "$CACHES" | wc -l)
+            echo "Deleting $COUNT old app-build cache(s)..."
+            echo "$CACHES" | while read -r id; do
               gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
             done
-          else
-            echo "No old build caches to delete."
           fi
+
+          # 3. 清理其他 gradle 缓存（保留最新 1 份）
+          for PREFIX in "gradle-dependencies-" "gradle-transforms-" "gradle-kotlin-dsl-" "gradle-groovy-dsl-" "gradle-wrapper-zips-" "gradle-instrumented-jars-" "gradle-generated-gradle-jars-"; do
+            CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq "[.actions_caches[] | select(.key | startswith(\"$PREFIX\"))] | sort_by(.created_at) | reverse | .[1:] | .[].id")
+            if [ -n "$CACHES" ]; then
+              COUNT=$(echo "$CACHES" | wc -l)
+              echo "Deleting $COUNT old ${PREFIX}cache(s)..."
+              echo "$CACHES" | while read -r id; do
+                gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
+              done
+            fi
+          done
+
+          echo "Cache cleanup completed."
 
       - name: Clean old releases (keep latest 10)
         if: always()
