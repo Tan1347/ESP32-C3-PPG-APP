@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONObject
 import java.io.File
@@ -18,6 +19,8 @@ import java.net.URL
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "UpdateChecker"
 
 data class ReleaseInfo(
     val tagName: String,
@@ -42,7 +45,7 @@ class UpdateChecker @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        private const val REPO = "kelven/PPGTool"  // TODO: 替换为实际仓库
+        private const val REPO = "Tan1347/ESP32-C3-PPG-APP"
         private const val GITHUB_API = "https://api.github.com/repos/$REPO/releases/latest"
     }
 
@@ -65,12 +68,18 @@ class UpdateChecker @Inject constructor(
 
     fun checkForUpdate(onResult: (ReleaseInfo?) -> Unit) {
         executor.execute {
+            Log.i(TAG, "开始检查更新")
+            Log.i(TAG, "当前版本: ${getCurrentVersion()}")
+            Log.i(TAG, "检查仓库: $REPO")
+
             // 使用优选排序后的镜像列表
             val apiMirrors = GitHubHostsHelper.getSortedMirrors(context)
+            Log.d(TAG, "镜像列表: $apiMirrors")
 
             for ((index, mirror) in apiMirrors.withIndex()) {
                 try {
                     val apiUrl = "${mirror}${GITHUB_API}"
+                    Log.d(TAG, "尝试镜像 $index: $apiUrl")
                     val url = URL(apiUrl)
                     val conn = url.openConnection() as HttpURLConnection
                     conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
@@ -85,26 +94,33 @@ class UpdateChecker @Inject constructor(
                         if (release != null) {
                             val currentVersion = getCurrentVersion()
                             val remoteVersion = extractVersion(release.tagName)
+                            Log.i(TAG, "远程版本: $remoteVersion, 当前版本: $currentVersion")
                             if (isNewerVersion(remoteVersion, currentVersion)) {
+                                Log.i(TAG, "发现新版本: ${release.tagName}")
                                 val optimized = optimizeDownloadUrl(release)
                                 mainHandler.post { onResult(optimized) }
                             } else {
+                                Log.i(TAG, "已是最新版本")
                                 mainHandler.post { onResult(null) }
                             }
                             return@execute
                         }
+                    } else {
+                        Log.w(TAG, "镜像 $index 响应: ${conn.responseCode}")
                     }
                     conn.disconnect()
                 } catch (e: Exception) {
-                    // 继续尝试下一个镜像
+                    Log.e(TAG, "镜像 $index 失败: ${e.message}")
                 }
             }
 
             // 所有镜像失败，尝试从远程 hosts 获取 GitHub IP 直连
+            Log.w(TAG, "所有镜像失败，尝试远程 hosts 直连")
             val release = tryDirectWithRemoteHosts()
             if (release != null) {
                 val currentVersion = getCurrentVersion()
                 val remoteVersion = extractVersion(release.tagName)
+                Log.i(TAG, "远程 hosts 直连成功，远程版本: $remoteVersion")
                 if (isNewerVersion(remoteVersion, currentVersion)) {
                     val optimized = optimizeDownloadUrl(release)
                     mainHandler.post { onResult(optimized) }
@@ -114,6 +130,7 @@ class UpdateChecker @Inject constructor(
                 return@execute
             }
 
+            Log.e(TAG, "所有更新检查方式均失败")
             mainHandler.post { onResult(null) }
         }
     }

@@ -77,8 +77,7 @@ class DeviceViewModel @Inject constructor(
         Log.i(TAG, "连接设备: ${device.name} (${device.address})")
         viewModelScope.launch {
             try {
-                val btDevice = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-                    ?.getRemoteDevice(device.address)
+                val btDevice = bleManager.getBluetoothDevice(device.address)
                 if (btDevice != null) {
                     val success = bleManager.connect(btDevice, device.name)
                     Log.i(TAG, "连接结果: $success")

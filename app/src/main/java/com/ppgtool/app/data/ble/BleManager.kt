@@ -302,6 +302,16 @@ class BleManager @Inject constructor(
     }
 
     /**
+     * 获取 BluetoothDevice 实例
+     * @param address MAC 地址
+     * @return BluetoothDevice 实例，失败返回 null
+     */
+    @SuppressLint("MissingPermission")
+    fun getBluetoothDevice(address: String): BluetoothDevice? {
+        return bluetoothAdapter?.getRemoteDevice(address)
+    }
+
+    /**
      * 同步时间到设备
      * @param timestamp Unix 10 位时间戳（秒）
      * @return 是否发送成功

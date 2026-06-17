@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   check-and-build:
@@ -48,12 +49,14 @@ jobs:
         run: |
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
           SHORT_SHA=$(git rev-parse --short HEAD)
-          TAG="v${VERSION_NAME}-${SHORT_SHA}"
+          TAG="v${VERSION_NAME}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
+          # 检查 tag 是否存在，如果存在则删除（覆盖发布）
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping"
+            echo "Tag $TAG exists, will overwrite"
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag_exists=false" >> "$GITHUB_OUTPUT"
@@ -97,7 +100,7 @@ jobs:
       # ===== 构建阶段 =====
 
       - name: Decode release keystore
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        if: steps.check.outputs.need_build == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
@@ -110,11 +113,11 @@ jobs:
           fi
 
       - name: Make gradlew executable
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        if: steps.check.outputs.need_build == 'true'
         run: chmod +x ./gradlew
 
       - name: Build Release APK
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        if: steps.check.outputs.need_build == 'true'
         env:
           KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
           KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
@@ -163,20 +166,36 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Delete old release if exists
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          echo "Deleting old release for $TAG..."
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          echo "Old release deleted."
+
       - name: Create Release
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        if: steps.check.outputs.need_build == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "v${{ steps.tag.outputs.version_name }}"
-          body: ${{ steps.notes.outputs.body }}
+          body: |
+            ## 更新内容
+
+            ${{ steps.notes.outputs.body }}
+
+            ---
+            **构建**: ${{ steps.tag.outputs.short_sha }}
           files: |
             app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
 
       - name: Upload APK artifact
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
+        if: steps.check.outputs.need_build == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ steps.tag.outputs.tag }}

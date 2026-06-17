@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -75,8 +77,8 @@ fun FileListItem(filename: String, onDownload: () -> Unit) {
                 when {
                     filename.endsWith(".csv") -> Icons.Filled.TableChart
                     filename.endsWith(".bin") -> Icons.Filled.Memory
-                    filename.endsWith(".log") -> Icons.Filled.Article
-                    else -> Icons.Filled.InsertDriveFile
+                    filename.endsWith(".log") -> Icons.AutoMirrored.Filled.Article
+                    else -> Icons.AutoMirrored.Filled.InsertDriveFile
                 },
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary
