@@ -137,18 +137,22 @@ fun OtaScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 当前版本
-        Card(modifier = Modifier.fillMaxWidth()) {
+        // 当前版本 (clickable to refresh)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { viewModel.loadDeviceStatus() }
+        ) {
             Row(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text("当前固件版本", style = MaterialTheme.typography.bodySmall)
                     Text(state.deviceVersion, style = MaterialTheme.typography.headlineMedium)
                 }
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

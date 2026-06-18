@@ -264,8 +264,37 @@ class BleManager @Inject constructor(
         val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return false
         val char = service.getCharacteristic(PpgGattProfile.CHAR_COMMAND) ?: return false
 
-        char.value = command
+        // Build frame: [0xAA][CMD][LEN][DATA...][CHECKSUM]
+        val frame = buildFrame(command)
+        char.value = frame
         return gatt.writeCharacteristic(char)
+    }
+
+    /**
+     * Build BLE frame according to protocol
+     * Format: [0xAA][CMD][LEN][DATA...][CHECKSUM]
+     * CHECKSUM = XOR of CMD, LEN, and all DATA bytes
+     */
+    private fun buildFrame(cmdData: ByteArray): ByteArray {
+        val cmd = cmdData[0]
+        val data = if (cmdData.size > 1) cmdData.copyOfRange(1, cmdData.size) else ByteArray(0)
+        val len = data.size
+
+        // Calculate checksum: XOR of CMD + LEN + DATA
+        var checksum = cmd.toInt() xor len
+        for (b in data) {
+            checksum = checksum xor b.toInt()
+        }
+
+        // Build frame
+        val frame = ByteArray(4 + data.size)
+        frame[0] = 0xAA.toByte()  // Header
+        frame[1] = cmd             // Command
+        frame[2] = len.toByte()    // Data length
+        System.arraycopy(data, 0, frame, 3, data.size)
+        frame[3 + data.size] = checksum.toByte()
+
+        return frame
     }
 
     @SuppressLint("MissingPermission")
