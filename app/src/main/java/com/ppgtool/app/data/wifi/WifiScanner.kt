@@ -100,17 +100,31 @@ class WifiScanner @Inject constructor(
 
     @Suppress("Deprecation")
     private fun getSsid(result: ScanResult): String {
-        return if (android.os.Build.VERSION.SDK_INT >= 33) {
+        val ssid = if (android.os.Build.VERSION.SDK_INT >= 33) {
             result.wifiSsid?.toString() ?: result.SSID ?: ""
         } else {
             result.SSID ?: ""
         }
+        // 移除可能存在的引号
+        return ssid.removeSurrounding("\"")
     }
 
     fun isWifiEnabled(): Boolean = wifiManager.isWifiEnabled
 
-    fun enableWifi() {
-        @Suppress("DEPRECATION")
-        wifiManager.isWifiEnabled = true
+    /**
+     * 请求开启 WiFi
+     * Android 10+ 使用系统面板，以下版本直接开启
+     * @return true 如果可以直接开启，false 需要用户手动操作
+     */
+    @Suppress("DEPRECATION")
+    fun requestEnableWifi(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ 无法直接开启，返回 false 让调用方打开系统设置面板
+            false
+        } else {
+            // Android 10 以下可以直接开启
+            wifiManager.isWifiEnabled = true
+            true
+        }
     }
 }

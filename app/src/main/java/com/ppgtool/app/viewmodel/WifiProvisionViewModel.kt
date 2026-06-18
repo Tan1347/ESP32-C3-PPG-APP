@@ -2,6 +2,7 @@ package com.ppgtool.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.ppgtool.app.data.ble.BleManager
 import com.ppgtool.app.data.ble.PpgGattProfile
 import com.ppgtool.app.data.wifi.WifiNetwork
@@ -12,6 +13,8 @@ import kotlinx.coroutines.launch
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 
+private const val TAG = "WifiProvisionVM"
+
 data class WifiProvisionState(
     val isScanning: Boolean = false,
     val networks: List<WifiNetwork> = emptyList(),
@@ -19,6 +22,7 @@ data class WifiProvisionState(
     val password: String = "",
     val isConnecting: Boolean = false,
     val connectionResult: ConnectionResult? = null,
+    val showEnableWifiDialog: Boolean = false,
     val error: String? = null
 )
 
@@ -42,8 +46,14 @@ class WifiProvisionViewModel @Inject constructor(
         _state.update { it.copy(isScanning = true, error = null) }
 
         if (!wifiScanner.isWifiEnabled()) {
-            _state.update { it.copy(isScanning = false, error = "请先开启 WiFi") }
-            return
+            // 尝试直接开启 WiFi
+            if (wifiScanner.requestEnableWifi()) {
+                // 成功开启，继续扫描
+            } else {
+                // Android 10+ 需要用户手动开启，显示提示
+                _state.update { it.copy(isScanning = false, showEnableWifiDialog = true) }
+                return
+            }
         }
 
         viewModelScope.launch {
@@ -62,6 +72,10 @@ class WifiProvisionViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun dismissEnableWifiDialog() {
+        _state.update { it.copy(showEnableWifiDialog = false) }
     }
 
     fun selectNetwork(network: WifiNetwork) {
@@ -91,11 +105,13 @@ class WifiProvisionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 // 构造 WiFi 凭据命令
-                // 格式: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd...]
+                // 格式: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd...][checksum]
                 val ssidBytes = network.ssid.toByteArray(StandardCharsets.UTF_8)
                 val pwdBytes = password.toByteArray(StandardCharsets.UTF_8)
 
-                val command = ByteArray(1 + 2 + ssidBytes.size + 2 + pwdBytes.size)
+                // 计算帧长度：命令(1) + SSID长度(2) + SSID + 密码长度(2) + 密码 + 校验码(1)
+                val frameLength = 1 + 2 + ssidBytes.size + 2 + pwdBytes.size + 1
+                val command = ByteArray(frameLength)
                 var offset = 0
 
                 // 命令 ID
@@ -115,8 +131,37 @@ class WifiProvisionViewModel @Inject constructor(
 
                 // 密码
                 pwdBytes.copyInto(command, offset)
+                offset += pwdBytes.size
+
+                // 计算校验码（从命令ID开始，到密码结束，所有字节异或）
+                var checksum: Byte = 0
+                for (i in 0 until offset) {
+                    checksum = (checksum.toInt() xor command[i].toInt()).toByte()
+                }
+                command[offset] = checksum
+
+                // ====== BLE 帧详细日志 ======
+                Log.i(TAG, "========================================")
+                Log.i(TAG, "BLE WiFi 凭据帧详情")
+                Log.i(TAG, "========================================")
+                Log.i(TAG, "SSID: \"${network.ssid}\"")
+                Log.i(TAG, "密码: \"${password}\"")
+                Log.i(TAG, "----------------------------------------")
+                Log.i(TAG, "帧结构:")
+                Log.i(TAG, "  命令ID:     0x%02X (CMD_WIFI_ADD)".format(command[0]))
+                Log.i(TAG, "  SSID长度:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
+                Log.i(TAG, "  SSID数据:   ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"${network.ssid}\")")
+                val pwdLenOffset = 3 + ssidBytes.size
+                Log.i(TAG, "  密码长度:   ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
+                Log.i(TAG, "  密码数据:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
+                Log.i(TAG, "  校验码:     0x%02X (XOR)".format(checksum))
+                Log.i(TAG, "----------------------------------------")
+                Log.i(TAG, "完整帧(${command.size}字节): ${command.joinToString(" ") { "%02X".format(it) }}")
+                Log.i(TAG, "========================================")
 
                 val success = bleManager.writeCommand(command)
+
+                Log.i(TAG, "BLE 写入结果: $success")
 
                 if (success) {
                     _state.update {
@@ -136,6 +181,7 @@ class WifiProvisionViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "发送异常: ${e.message}", e)
                 _state.update {
                     it.copy(
                         isConnecting = false,

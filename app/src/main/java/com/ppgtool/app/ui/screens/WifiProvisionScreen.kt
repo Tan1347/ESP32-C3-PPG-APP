@@ -1,5 +1,7 @@
 package com.ppgtool.app.ui.screens
 
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -58,6 +60,19 @@ fun WifiProvisionScreen(
             onConfirm = { viewModel.sendWifiCredentials() },
             onDismiss = { viewModel.dismissSelection() },
             isConnecting = state.isConnecting
+        )
+    }
+
+    // 开启 WiFi 提示对话框
+    if (state.showEnableWifiDialog) {
+        EnableWifiDialog(
+            onConfirm = {
+                viewModel.dismissEnableWifiDialog()
+                // 打开系统 WiFi 设置
+                val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                context.startActivity(intent)
+            },
+            onDismiss = { viewModel.dismissEnableWifiDialog() }
         )
     }
 
@@ -178,13 +193,39 @@ private fun WifiNetworkItem(
                 )
                 Text(
                     buildString {
-                        append("${network.frequency / 1000} MHz")
+                        append("${network.frequency / 1000.0} GHz")
                         if (network.isSecure) append(" · 已加密")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            // 信号强度数值
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${network.rssi} dBm",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when {
+                        network.rssi >= -50 -> MaterialTheme.colorScheme.primary
+                        network.rssi >= -70 -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.error
+                    }
+                )
+                Text(
+                    when (network.signalLevel) {
+                        4 -> "强"
+                        3 -> "较强"
+                        2 -> "中等"
+                        1 -> "较弱"
+                        else -> "弱"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
 
             // 安全状态
             if (network.isSecure) {
@@ -273,6 +314,29 @@ private fun WifiPasswordDialog(
                 TextButton(onClick = onDismiss) {
                     Text("取消")
                 }
+            }
+        }
+    )
+}
+
+@Composable
+private fun EnableWifiDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.WifiOff, contentDescription = null) },
+        title = { Text("WiFi 未开启") },
+        text = { Text("扫描 WiFi 需要开启无线网络，是否前往系统设置开启 WiFi？") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("去开启")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
             }
         }
     )

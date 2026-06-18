@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -56,6 +58,13 @@ class BleManager @Inject constructor(
     // 扫描相关
     private var currentScanner: BluetoothLeScanner? = null
     private var currentScanCallback: ScanCallback? = null
+
+    // 自动重连相关
+    private var lastConnectedDevice: BluetoothDevice? = null
+    private var lastConnectedName: String = ""
+    private var isAutoReconnecting = false
+    private var autoReconnectRunnable: Runnable? = null
+    private val reconnectHandler = Handler(Looper.getMainLooper())
 
     /**
      * 扫描 BLE 设备
@@ -173,6 +182,8 @@ class BleManager @Inject constructor(
     @SuppressLint("MissingPermission")
     suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
         _connectionState.value = ConnectionState.Connecting
+        lastConnectedDevice = device
+        lastConnectedName = deviceName
 
         return suspendCancellableCoroutine { continuation ->
             val gattCallback = object : BluetoothGattCallback() {
@@ -180,13 +191,21 @@ class BleManager @Inject constructor(
                     when (newState) {
                         BluetoothProfile.STATE_CONNECTED -> {
                             bluetoothGatt = gatt
+                            isAutoReconnecting = false
                             _connectionState.value = ConnectionState.Connected(device, deviceName)
+                            Log.i(TAG, "设备已连接: $deviceName (${device.address})")
                             gatt.discoverServices()
-                            // 不在这里 resume，等待 services 发现完成
                         }
                         BluetoothProfile.STATE_DISCONNECTED -> {
-                            _connectionState.value = ConnectionState.Disconnected
+                            Log.w(TAG, "设备断开连接: $deviceName (${device.address})")
                             bluetoothGatt = null
+                            _connectionState.value = ConnectionState.Disconnected
+
+                            // 如果不是主动断开，尝试自动重连
+                            if (!isAutoReconnecting) {
+                                startAutoReconnect()
+                            }
+
                             if (continuation.isActive) continuation.resume(false)
                         }
                     }
@@ -209,7 +228,10 @@ class BleManager @Inject constructor(
                             characteristic.value?.let { _liveData.tryEmit(it) }
                         }
                         PpgGattProfile.CHAR_STATUS -> {
-                            characteristic.value?.let { _statusData.tryEmit(it) }
+                            characteristic.value?.let { data ->
+                                Log.d(TAG, "Status Notify: ${data.joinToString(" ") { "%02X".format(it) }}")
+                                _statusData.tryEmit(data)
+                            }
                         }
                     }
                 }
@@ -217,13 +239,22 @@ class BleManager @Inject constructor(
                 override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         when (characteristic.uuid) {
-                            PpgGattProfile.CHAR_STATUS -> characteristic.value?.let { _statusData.tryEmit(it) }
+                            PpgGattProfile.CHAR_STATUS -> {
+                                characteristic.value?.let { data ->
+                                    Log.d(TAG, "Status Read: ${data.joinToString(" ") { "%02X".format(it) }}")
+                                    _statusData.tryEmit(data)
+                                }
+                            }
                         }
                     }
 
                     // 处理 readCharacteristic 的异步结果
                     if (characteristic.uuid == pendingReadUuid) {
-                        val value = if (status == BluetoothGatt.GATT_SUCCESS) characteristic.value else null
+                        val value = if (status == BluetoothGatt.GATT_SUCCESS) {
+                            characteristic.value?.also { data ->
+                                Log.d(TAG, "Read ${characteristic.uuid}: ${data.joinToString(" ") { "%02X".format(it) }}")
+                            }
+                        } else null
                         pendingReadContinuation?.resume(value)
                         pendingReadContinuation = null
                         pendingReadUuid = null
@@ -320,10 +351,61 @@ class BleManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
+        isAutoReconnecting = true  // 标记为主动断开，不自动重连
+        stopAutoReconnect()
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
         _connectionState.value = ConnectionState.Disconnected
+    }
+
+    /**
+     * 开始自动重连
+     */
+    private fun startAutoReconnect() {
+        val device = lastConnectedDevice ?: return
+        isAutoReconnecting = true
+        Log.i(TAG, "开始自动重连: $lastConnectedName (${device.address})")
+
+        autoReconnectRunnable = Runnable {
+            if (isAutoReconnecting && bluetoothGatt == null) {
+                Log.d(TAG, "尝试重连...")
+                try {
+                    device.connectGatt(context, false, object : BluetoothGattCallback() {
+                        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+                            when (newState) {
+                                BluetoothProfile.STATE_CONNECTED -> {
+                                    Log.i(TAG, "重连成功!")
+                                    bluetoothGatt = gatt
+                                    isAutoReconnecting = false
+                                    _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
+                                    gatt.discoverServices()
+                                }
+                                BluetoothProfile.STATE_DISCONNECTED -> {
+                                    Log.w(TAG, "重连失败，继续尝试...")
+                                    gatt.close()
+                                    // 继续重连
+                                    startAutoReconnect()
+                                }
+                            }
+                        }
+                    })
+                } catch (e: Exception) {
+                    Log.e(TAG, "重连异常: ${e.message}")
+                    startAutoReconnect()
+                }
+            }
+        }
+        reconnectHandler.postDelayed(autoReconnectRunnable!!, 3000) // 3秒后重试
+    }
+
+    /**
+     * 停止自动重连
+     */
+    private fun stopAutoReconnect() {
+        autoReconnectRunnable?.let { reconnectHandler.removeCallbacks(it) }
+        autoReconnectRunnable = null
+        isAutoReconnecting = false
     }
 
     fun isConnected(): Boolean {
