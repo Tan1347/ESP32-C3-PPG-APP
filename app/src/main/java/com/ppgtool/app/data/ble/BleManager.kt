@@ -304,18 +304,19 @@ class BleManager @Inject constructor(
     /**
      * Build BLE frame according to protocol
      * Format: [0xAA][CMD][LEN][DATA...][CHECKSUM]
-     * CHECKSUM = XOR of CMD, LEN, and all DATA bytes
+     * CHECKSUM = SUM of CMD, LEN, and all DATA bytes (mod 256)
      */
     private fun buildFrame(cmdData: ByteArray): ByteArray {
         val cmd = cmdData[0]
         val data = if (cmdData.size > 1) cmdData.copyOfRange(1, cmdData.size) else ByteArray(0)
         val len = data.size
 
-        // Calculate checksum: XOR of CMD + LEN + DATA
-        var checksum = cmd.toInt() xor len
+        // Calculate checksum: SUM of CMD + LEN + DATA (mod 256)
+        var checksum = (cmd.toInt() and 0xFF) + len
         for (b in data) {
-            checksum = checksum xor b.toInt()
+            checksum += (b.toInt() and 0xFF)
         }
+        checksum = checksum and 0xFF
 
         // Build frame
         val frame = ByteArray(4 + data.size)
