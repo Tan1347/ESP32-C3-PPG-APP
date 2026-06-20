@@ -10,6 +10,7 @@ import org.tan.ppgtoolapp.data.network.HttpRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -152,10 +153,12 @@ class MonitorViewModel @Inject constructor(
                             _deviceStatus.value = DeviceStatus(
                                 battery = battery,
                                 firmwareVersion = version,
-                                sdFreeMb = 0,  // SD 卡信息需要单独查询
+                                sdFreeMb = 0,  // Will be updated by querySdCardStatus()
                                 isOnline = true
                             )
                             Log.d(TAG, "BLE 获取状态成功: battery=${battery.soc}%, version=$version")
+                            // Query SD card separately
+                            querySdCardStatus()
                             return@launch
                         }
                     }
@@ -181,7 +184,8 @@ class MonitorViewModel @Inject constructor(
     }
 
     /**
-     * 查询 SD 卡容量
+     * Query SD card capacity via BLE command 0x23
+     * Response frame: [0xAA][0x23][0x04][free_h][free_l][total_h][total_l][CHECKSUM]
      */
     fun querySdCardStatus() {
         viewModelScope.launch {
@@ -189,13 +193,26 @@ class MonitorViewModel @Inject constructor(
                 val success = bleManager.querySdCardStatus()
                 if (success) {
                     Log.d(TAG, "BLE 查询 SD 卡状态已发送")
+                    // Wait for response with timeout
+                    val resp = withTimeoutOrNull(2000L) {
+                        bleManager.cmdResponse.first { it.size >= 7 && it[1] == 0x23.toByte() }
+                    }
+                    if (resp != null) {
+                        val freeMb = ((resp[3].toInt() and 0xFF) shl 8) or (resp[4].toInt() and 0xFF)
+                        val totalMb = ((resp[5].toInt() and 0xFF) shl 8) or (resp[6].toInt() and 0xFF)
+                        Log.d(TAG, "SD 卡响应: free=${freeMb}MB, total=${totalMb}MB")
+                        _deviceStatus.update { it.copy(sdFreeMb = freeMb) }
+                    } else {
+                        Log.w(TAG, "SD 卡查询超时")
+                    }
                 }
             }
         }
     }
 
     /**
-     * 查询电池详情
+     * Query battery details via BLE command 0x24
+     * Response frame: [0xAA][0x24][0x03][soc][voltage_h][voltage_l][CHECKSUM]
      */
     fun queryBatteryStatus() {
         viewModelScope.launch {

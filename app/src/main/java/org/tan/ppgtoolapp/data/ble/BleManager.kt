@@ -50,6 +50,10 @@ class BleManager @Inject constructor(
     private val _statusData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
     val statusData: SharedFlow<ByteArray> = _statusData.asSharedFlow()
 
+    // Command response data (SD card, battery query, etc.)
+    private val _cmdResponse = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    val cmdResponse: SharedFlow<ByteArray> = _cmdResponse.asSharedFlow()
+
     // 用于 readCharacteristic 的异步等待
     @Volatile
     private var pendingReadUuid: UUID? = null
@@ -250,6 +254,12 @@ class BleManager @Inject constructor(
                                 _statusData.tryEmit(data)
                             }
                         }
+                        PpgGattProfile.CHAR_COMMAND -> {
+                            characteristic.value?.let { data ->
+                                Log.d(TAG, "CMD Response: ${data.joinToString(" ") { "%02X".format(it) }} (${data.size} bytes)")
+                                _cmdResponse.tryEmit(data)
+                            }
+                        }
                         else -> {
                             Log.d(TAG, "Unknown Notify [${characteristic.uuid}]: ${characteristic.value?.joinToString(" ") { "%02X".format(it) }}")
                         }
@@ -326,6 +336,16 @@ class BleManager @Inject constructor(
                 Log.i(TAG, "已启用 Status Notify: ${char.uuid}")
             } ?: Log.w(TAG, "Status 无 CCC Descriptor")
         } ?: Log.w(TAG, "未找到 Status 特征值: ${PpgGattProfile.CHAR_STATUS}")
+
+        // Enable Command Notify (for SD card query, battery query responses)
+        service.getCharacteristic(PpgGattProfile.CHAR_COMMAND)?.let { char ->
+            gatt.setCharacteristicNotification(char, true)
+            char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(desc)
+                Log.i(TAG, "已启用 Command Notify: ${char.uuid}")
+            } ?: Log.w(TAG, "Command 无 CCC Descriptor")
+        } ?: Log.w(TAG, "未找到 Command 特征值: ${PpgGattProfile.CHAR_COMMAND}")
     }
 
     @SuppressLint("MissingPermission")

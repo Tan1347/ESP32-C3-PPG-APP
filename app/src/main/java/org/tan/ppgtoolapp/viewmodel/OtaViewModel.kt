@@ -146,18 +146,18 @@ class OtaViewModel @Inject constructor(
                 // 按字段解析
                 if (data.size >= 1) {
                     val soc = data[0].toInt() and 0xFF
-                    Log.i(TAG, "[0]     battery_soc: ${soc}% (0x%02X)".format(data[0]))
+                    Log.i(TAG, "[0]     battery_soc: %d%% (0x%02X)".format(soc, data[0]))
                 }
                 if (data.size >= 3) {
                     val voltage = ((data[1].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF)
-                    Log.i(TAG, "[1-2]   voltage: ${voltage}mV (0x%02X 0x%02X)".format(data[1], data[2]))
+                    Log.i(TAG, "[1-2]   voltage: %dmV (0x%02X 0x%02X)".format(voltage, data[1], data[2]))
                 }
                 if (data.size >= 4) {
                     Log.i(TAG, "[3]     reserved: 0x%02X".format(data[3]))
                 }
                 if (data.size >= 5) {
                     val connected = data[4].toInt() and 0xFF
-                    Log.i(TAG, "[4]     connected: $connected (0x%02X)".format(data[4]))
+                    Log.i(TAG, "[4]     connected: %d (0x%02X)".format(connected, data[4]))
                 }
                 if (data.size >= 6) {
                     val versionEnd = minOf(20, data.size)

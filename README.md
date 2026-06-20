@@ -310,7 +310,41 @@ APP 支持两种 WiFi 配网方式：
 
 **响应方式**：
 
-固件收到查询命令后，应更新 Status 特征值（0xFFF1），APP 通过 Notify 或 Read 获取更新后的数据。
+- 0x22 (查询状态)：固件更新 Status 特征值（0xFFF1），APP 通过 Read 获取
+- 0x23 (查询 SD 卡)：固件通过 Command 特征值（0xFFF3）Notify 返回数据帧
+- 0x24 (查询电池)：固件通过 Command 特征值（0xFFF3）Notify 返回数据帧
+
+**SD 卡查询响应帧格式 (0x23)**：
+
+```
+帧结构:  [0xAA][0x23][0x04][FREE_H][FREE_L][TOTAL_H][TOTAL_L][CHECKSUM]
+字节数:   1     1     1     1       1       1        1        1
+```
+
+| 字段 | 偏移 | 长度 | 类型 | 说明 |
+|------|------|------|------|------|
+| HEADER | 0 | 1 | uint8 | 帧头 0xAA |
+| CMD | 1 | 1 | uint8 | 命令 ID: 0x23 |
+| LEN | 2 | 1 | uint8 | 数据长度: 0x04 |
+| FREE_H | 3 | 1 | uint8 | 剩余空间高字节 |
+| FREE_L | 4 | 1 | uint8 | 剩余空间低字节 |
+| TOTAL_H | 5 | 1 | uint8 | 总空间高字节 |
+| TOTAL_L | 6 | 1 | uint8 | 总空间低字节 |
+| CHECKSUM | 7 | 1 | uint8 | 校验码 (SUM) |
+
+FREE 和 TOTAL 均为 uint16 big-endian，单位 MB。
+
+**示例：剩余 1024MB，总容量 3768MB**：
+```
+AA 23 04 04 00 0E B8 XX
+```
+
+**电池查询响应帧格式 (0x24)**：
+
+```
+帧结构:  [0xAA][0x24][0x03][SOC][VOLTAGE_H][VOLTAGE_L][CHECKSUM]
+字节数:   1     1     1     1     1          1          1
+```
 
 **Status 特征值数据格式（20 字节）**：
 
@@ -598,8 +632,8 @@ val DEVICE_NAME_PREFIXES = listOf(
 | 文件列表 | 0xFFF4 | 返回 TF 卡文件列表 |
 | WiFi 凭据 | CMD 0x10 | 解析帧，校验 checksum，连接 WiFi |
 | 查询状态 | CMD 0x22 | 更新 Status 特征值（电量、版本、WiFi） |
-| 查询 SD 卡 | CMD 0x23 | 更新 Status 特征值（SD 卡容量） |
-| 查询电池 | CMD 0x24 | 更新 Status 特征值（电量、电压） |
+| 查询 SD 卡 | CMD 0x23 | 通过 Command 特征值 Notify 返回 [free_h][free_l][total_h][total_l] |
+| 查询电池 | CMD 0x24 | 通过 Command 特征值 Notify 返回 [soc][voltage_h][voltage_l] |
 | 时间同步 | CMD 0x40 | 解析帧，设置系统时间 |
 | OTA 模式 | CMD 0x20 | 进入 OTA 等待固件上传 |
 
