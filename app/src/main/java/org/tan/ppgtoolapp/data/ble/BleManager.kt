@@ -213,11 +213,25 @@ class BleManager @Inject constructor(
 
                 override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
+                        Log.i(TAG, "=== GATT 服务发现 ===")
+                        for (service in gatt.services) {
+                            Log.i(TAG, "Service: ${service.uuid}")
+                            for (char in service.characteristics) {
+                                val props = mutableListOf<String>()
+                                if (char.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) props.add("Read")
+                                if (char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) props.add("Write")
+                                if (char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) props.add("WriteNoResp")
+                                if (char.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) props.add("Notify")
+                                if (char.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) props.add("Indicate")
+                                Log.i(TAG, "  Char: ${char.uuid} [${props.joinToString(", ")}]")
+                            }
+                        }
+                        Log.i(TAG, "====================")
+
                         enableNotifications(gatt)
-                        // Services 发现完成，现在才返回 true
                         if (continuation.isActive) continuation.resume(true)
                     } else {
-                        // Services 发现失败
+                        Log.e(TAG, "服务发现失败: $status")
                         if (continuation.isActive) continuation.resume(false)
                     }
                 }
@@ -225,13 +239,19 @@ class BleManager @Inject constructor(
                 override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
                     when (characteristic.uuid) {
                         PpgGattProfile.CHAR_LIVE_DATA -> {
-                            characteristic.value?.let { _liveData.tryEmit(it) }
+                            characteristic.value?.let { data ->
+                                Log.v(TAG, "Live Data: ${data.joinToString(" ") { "%02X".format(it) }} (${data.size} bytes)")
+                                _liveData.tryEmit(data)
+                            }
                         }
                         PpgGattProfile.CHAR_STATUS -> {
                             characteristic.value?.let { data ->
                                 Log.d(TAG, "Status Notify: ${data.joinToString(" ") { "%02X".format(it) }}")
                                 _statusData.tryEmit(data)
                             }
+                        }
+                        else -> {
+                            Log.d(TAG, "Unknown Notify [${characteristic.uuid}]: ${characteristic.value?.joinToString(" ") { "%02X".format(it) }}")
                         }
                     }
                 }
@@ -268,7 +288,12 @@ class BleManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     private fun enableNotifications(gatt: BluetoothGatt) {
-        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return
+        val service = gatt.getService(PpgGattProfile.SERVICE_UUID)
+        if (service == null) {
+            Log.e(TAG, "未找到目标 Service: ${PpgGattProfile.SERVICE_UUID}")
+            return
+        }
+        Log.i(TAG, "找到 Service: ${service.uuid}")
 
         // 启用 Live Data Notify
         service.getCharacteristic(PpgGattProfile.CHAR_LIVE_DATA)?.let { char ->
@@ -276,8 +301,9 @@ class BleManager @Inject constructor(
             char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(desc)
-            }
-        }
+                Log.i(TAG, "已启用 Live Data Notify: ${char.uuid}")
+            } ?: Log.w(TAG, "Live Data 无 CCC Descriptor")
+        } ?: Log.w(TAG, "未找到 Live Data 特征值: ${PpgGattProfile.CHAR_LIVE_DATA}")
 
         // 启用 Status Notify
         service.getCharacteristic(PpgGattProfile.CHAR_STATUS)?.let { char ->
@@ -285,8 +311,9 @@ class BleManager @Inject constructor(
             char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(desc)
-            }
-        }
+                Log.i(TAG, "已启用 Status Notify: ${char.uuid}")
+            } ?: Log.w(TAG, "Status 无 CCC Descriptor")
+        } ?: Log.w(TAG, "未找到 Status 特征值: ${PpgGattProfile.CHAR_STATUS}")
     }
 
     @SuppressLint("MissingPermission")
