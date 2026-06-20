@@ -12,10 +12,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import org.tan.ppgtoolapp.ui.screens.*
 
 sealed class Screen(val route: String, val title: String) {
@@ -25,6 +27,7 @@ sealed class Screen(val route: String, val title: String) {
     data object Settings : Screen("settings", "设置")
     data object WifiProvision : Screen("wifi_provision", "WiFi配网")
     data object OtaUpgrade : Screen("ota_upgrade", "OTA升级")
+    data object Analysis : Screen("analysis/{filePath}/{fileName}", "数据分析")
 }
 
 // 主页路由（显示底部导航栏）
@@ -54,9 +57,11 @@ fun AppNavigation() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val isMainScreen = currentDestination?.route in mainRoutes
+    val isAnalysisScreen = currentDestination?.route?.startsWith("analysis") == true
 
     Scaffold(
         topBar = {
+            if (!isAnalysisScreen) {
             TopAppBar(
                 title = {
                     Text(
@@ -78,9 +83,10 @@ fun AppNavigation() {
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
+            }
         },
         bottomBar = {
-            if (isMainScreen) {
+            if (isMainScreen && !isAnalysisScreen) {
                 NavigationBar {
                     bottomNavItems.forEach { item ->
                         NavigationBarItem(
@@ -111,10 +117,31 @@ fun AppNavigation() {
                     onNavigateToDevice = { navController.navigate(Screen.Device.route) }
                 )
             }
-            composable(Screen.Data.route) { DataScreen() }
+            composable(Screen.Data.route) {
+                DataScreen(
+                    onNavigateToAnalysis = { filePath, fileName ->
+                        navController.navigate("analysis/$filePath/$fileName")
+                    }
+                )
+            }
             composable(Screen.Settings.route) { SettingsScreen(navController) }
             composable(Screen.WifiProvision.route) { WifiProvisionScreen(navController) }
             composable(Screen.OtaUpgrade.route) { OtaScreen(navController) }
+            composable(
+                route = Screen.Analysis.route,
+                arguments = listOf(
+                    navArgument("filePath") { type = NavType.StringType },
+                    navArgument("fileName") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+                val fileName = backStackEntry.arguments?.getString("fileName") ?: ""
+                AnalysisScreen(
+                    filePath = java.net.URLDecoder.decode(filePath, "UTF-8"),
+                    fileName = java.net.URLDecoder.decode(fileName, "UTF-8"),
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

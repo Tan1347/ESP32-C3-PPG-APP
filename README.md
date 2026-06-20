@@ -10,7 +10,10 @@ ESP32-C3 PPG companion Android application for real-time monitoring, data manage
 - **Device Connection**: BLE scan, connect, pair ESP32-C3 PPG devices
 - **Real-time Monitoring**: PPG waveform display, heart rate/SpO2/perfusion index real-time data
 - **Device Status**: Battery percentage, firmware version, SD card free space
-- **Data Management**: Download collection data from TF card via WiFi HTTP
+- **Data Management**: Download collection data from TF card via WiFi HTTP, Room database for file tracking
+- **Offline Analysis**: Parse binary PPG records, calculate HR/SpO2 statistics, detect SpO2 desaturation events
+- **Batch Download**: Download all files from device with progress notification
+- **Export & Share**: Export analysis results as CSV or PDF, share via Android Share Sheet
 
 ### Device Configuration
 - **WiFi Provisioning**: Scan 2.4GHz WiFi + manual hidden network, send credentials to device via BLE
@@ -523,6 +526,8 @@ ESP32-C3-PPG-APP/
 └── app/src/main/java/org/tan/ppgtoolapp/
     ├── PpgApplication.kt            # Application (Hilt)
     ├── MainActivity.kt              # Main Activity
+    ├── di/
+    │   └── DatabaseModule.kt        # Hilt Room database module
     ├── data/
     │   ├── ble/
     │   │   ├── BleManager.kt        # BLE connection, auto-reconnect
@@ -531,16 +536,30 @@ ESP32-C3-PPG-APP/
     │   │   ├── DeviceApi.kt         # HTTP API interface
     │   │   ├── HttpRepository.kt    # HTTP repository
     │   │   └── ...
+    │   ├── local/
+    │   │   ├── AppDatabase.kt       # Room database
+    │   │   ├── FileMetadata.kt      # Downloaded file entity
+    │   │   ├── FileMetadataDao.kt   # File metadata DAO
+    │   │   ├── PpgRecord.kt         # PPG data record model
+    │   │   ├── CsvParser.kt         # Binary PPG file parser
+    │   │   └── PpgAnalyzer.kt       # Statistical analysis (HR/SpO2/HRV)
     │   └── wifi/
     │       └── WifiScanner.kt       # WiFi scanner
+    ├── util/
+    │   ├── ExportHelper.kt          # CSV/PDF export + Share Sheet
+    │   ├── NotificationHelper.kt    # Download progress notifications
+    │   └── PermissionHelper.kt      # Permission handling
     ├── viewmodel/
     │   ├── MonitorViewModel.kt      # Monitor page logic
+    │   ├── DataViewModel.kt         # Data download & file management
     │   ├── OtaViewModel.kt          # OTA upgrade logic
     │   ├── WifiProvisionViewModel.kt # WiFi provisioning (scan + manual)
     │   └── SettingsViewModel.kt     # Settings page logic
     └── ui/screens/
         ├── MonitorScreen.kt         # Real-time monitoring UI
         ├── DeviceScreen.kt          # Device scan/connect
+        ├── DataScreen.kt            # File download & management
+        ├── AnalysisScreen.kt        # Offline data analysis
         ├── OtaScreen.kt             # OTA upgrade
         ├── WifiProvisionScreen.kt   # WiFi provisioning
         └── SettingsScreen.kt        # Settings

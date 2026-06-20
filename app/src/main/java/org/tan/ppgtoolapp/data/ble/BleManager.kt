@@ -465,6 +465,11 @@ class BleManager @Inject constructor(
         return _connectionState.value is ConnectionState.Connected
     }
 
+    fun getConnectedDeviceMac(): String? {
+        val state = _connectionState.value
+        return if (state is ConnectionState.Connected) state.device.address else null
+    }
+
     /**
      * 获取 BluetoothDevice 实例
      * @param address MAC 地址
