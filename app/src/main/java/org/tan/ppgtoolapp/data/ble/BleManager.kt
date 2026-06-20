@@ -17,7 +17,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
-private const val TAG = "BleManager"
 
 data class BleDevice(
     val name: String,
@@ -37,6 +36,11 @@ sealed class ConnectionState {
 class BleManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        private const val TAG = "BleManager"
+        private const val READ_TIMEOUT_MS = 5000L
+        private const val AUTO_RECONNECT_DELAY_MS = 3000L
+    }
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
     private var bluetoothGatt: BluetoothGatt? = null
@@ -317,35 +321,22 @@ class BleManager @Inject constructor(
         }
         Log.i(TAG, "找到 Service: ${service.uuid}")
 
-        // 启用 Live Data Notify
-        service.getCharacteristic(PpgGattProfile.CHAR_LIVE_DATA)?.let { char ->
-            gatt.setCharacteristicNotification(char, true)
-            char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
-                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                gatt.writeDescriptor(desc)
-                Log.i(TAG, "已启用 Live Data Notify: ${char.uuid}")
-            } ?: Log.w(TAG, "Live Data 无 CCC Descriptor")
-        } ?: Log.w(TAG, "未找到 Live Data 特征值: ${PpgGattProfile.CHAR_LIVE_DATA}")
+        enableCharNotification(gatt, PpgGattProfile.CHAR_LIVE_DATA, "Live Data")
+        enableCharNotification(gatt, PpgGattProfile.CHAR_STATUS, "Status")
+        enableCharNotification(gatt, PpgGattProfile.CHAR_COMMAND, "Command")
+    }
 
-        // 启用 Status Notify
-        service.getCharacteristic(PpgGattProfile.CHAR_STATUS)?.let { char ->
+    @SuppressLint("MissingPermission")
+    private fun enableCharNotification(gatt: BluetoothGatt, charUuid: UUID, label: String) {
+        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return
+        service.getCharacteristic(charUuid)?.let { char ->
             gatt.setCharacteristicNotification(char, true)
             char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
                 desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 gatt.writeDescriptor(desc)
-                Log.i(TAG, "已启用 Status Notify: ${char.uuid}")
-            } ?: Log.w(TAG, "Status 无 CCC Descriptor")
-        } ?: Log.w(TAG, "未找到 Status 特征值: ${PpgGattProfile.CHAR_STATUS}")
-
-        // Enable Command Notify (for SD card query, battery query responses)
-        service.getCharacteristic(PpgGattProfile.CHAR_COMMAND)?.let { char ->
-            gatt.setCharacteristicNotification(char, true)
-            char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
-                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                gatt.writeDescriptor(desc)
-                Log.i(TAG, "已启用 Command Notify: ${char.uuid}")
-            } ?: Log.w(TAG, "Command 无 CCC Descriptor")
-        } ?: Log.w(TAG, "未找到 Command 特征值: ${PpgGattProfile.CHAR_COMMAND}")
+                Log.i(TAG, "已启用 $label Notify: ${char.uuid}")
+            } ?: Log.w(TAG, "$label 无 CCC Descriptor")
+        } ?: Log.w(TAG, "未找到 $label 特征值: $charUuid")
     }
 
     @SuppressLint("MissingPermission")
@@ -397,7 +388,7 @@ class BleManager @Inject constructor(
         // 设置临时特征读取标记
         pendingReadUuid = uuid
 
-        return kotlinx.coroutines.withTimeoutOrNull(5000L) {
+        return kotlinx.coroutines.withTimeoutOrNull(READ_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
                 pendingReadContinuation = continuation
                 gatt.readCharacteristic(char)
@@ -458,7 +449,7 @@ class BleManager @Inject constructor(
                 }
             }
         }
-        reconnectHandler.postDelayed(autoReconnectRunnable!!, 3000) // 3秒后重试
+        reconnectHandler.postDelayed(autoReconnectRunnable!!, AUTO_RECONNECT_DELAY_MS)
     }
 
     /**

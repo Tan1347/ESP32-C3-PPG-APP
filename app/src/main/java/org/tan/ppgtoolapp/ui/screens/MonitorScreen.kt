@@ -234,18 +234,18 @@ fun DeviceStatusCard(
                 StatusItem(
                     icon = when {
                         battery == null -> Icons.AutoMirrored.Filled.BatteryUnknown
-                        battery.soc >= 80 -> Icons.Filled.BatteryFull
-                        battery.soc >= 50 -> Icons.Filled.Battery5Bar
-                        battery.soc >= 30 -> Icons.Filled.Battery3Bar
-                        battery.soc >= 10 -> Icons.Filled.Battery1Bar
+                        battery.batt_pct >= 80 -> Icons.Filled.BatteryFull
+                        battery.batt_pct >= 50 -> Icons.Filled.Battery5Bar
+                        battery.batt_pct >= 30 -> Icons.Filled.Battery3Bar
+                        battery.batt_pct >= 10 -> Icons.Filled.Battery1Bar
                         else -> Icons.Filled.Battery0Bar
                     },
                     label = "电量",
-                    value = if (battery != null) "${battery.soc}%" else "--",
+                    value = if (battery != null) "${battery.batt_pct}%" else "--",
                     iconTint = when {
                         battery == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                        battery.soc >= 30 -> SpO2Normal
-                        battery.soc >= 10 -> SpO2Warning
+                        battery.batt_pct >= 30 -> SpO2Normal
+                        battery.batt_pct >= 10 -> SpO2Warning
                         else -> SpO2Danger
                     },
                     onClick = onRefreshBattery

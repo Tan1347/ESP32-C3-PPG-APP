@@ -45,8 +45,7 @@ data class DeviceStatusResponse(
 )
 
 data class BatteryInfo(
-    val soc: Int,
-    val voltage: Int
+    val batt_pct: Int
 )
 
 data class LogListResponse(

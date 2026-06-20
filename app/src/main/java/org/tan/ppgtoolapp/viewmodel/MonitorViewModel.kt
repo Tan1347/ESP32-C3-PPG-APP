@@ -16,7 +16,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
-private const val TAG = "MonitorViewModel"
 
 /** BLE 数据字节偏移量 */
 private object PpgDataOffset {
@@ -51,6 +50,15 @@ data class DeviceStatus(
 class MonitorViewModel @Inject constructor(
     private val bleManager: BleManager,
     private val httpRepository: HttpRepository
+) {
+    companion object {
+        private const val TAG = "MonitorViewModel"
+        private const val BLE_QUERY_TIMEOUT_MS = 2000L
+        private const val BLE_RESPONSE_DELAY_MS = 500L
+        private const val STATUS_DATA_SIZE = 20
+        private const val SD_CARD_RESPONSE_SIZE = 7
+        private const val BATTERY_RESPONSE_SIZE = 5
+    }
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
@@ -146,54 +154,64 @@ class MonitorViewModel @Inject constructor(
     fun fetchDeviceStatus() {
         viewModelScope.launch {
             try {
-                // 优先通过 BLE 查询
-                if (bleManager.isConnected()) {
-                    val success = bleManager.queryDeviceStatus()
-                    if (success) {
-                        Log.d(TAG, "BLE 查询设备状态已发送")
-                        // BLE 查询结果会通过 Status Notify 返回
-                        // 延迟一小段时间等待响应
-                        delay(500)
-                        // 读取 Status 特征值
-                        val data = bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
-                        if (data != null && data.size >= 20) {
-                            val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(
-                                soc = data[0].toInt() and 0xFF,
-                                voltage = ((data[1].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF)
-                            )
-                            val versionBytes = data.copyOfRange(5, 20)
-                            val version = String(versionBytes, Charsets.UTF_8).trim()
-                            _deviceStatus.value = DeviceStatus(
-                                battery = battery,
-                                firmwareVersion = version,
-                                sdFreeMb = 0,  // Will be updated by querySdCardStatus()
-                                isOnline = true
-                            )
-                            Log.d(TAG, "BLE 获取状态成功: battery=${battery.soc}%, version=$version")
-                            // Query SD card separately
-                            querySdCardStatus()
-                            return@launch
-                        }
-                    }
-                }
+                // Try BLE first
+                if (fetchDeviceStatusBle()) return@launch
 
-                // 回退到 HTTP
-                val status = httpRepository.getDeviceStatus()
-                if (status != null) {
-                    _deviceStatus.value = DeviceStatus(
-                        battery = status.battery,
-                        firmwareVersion = status.version,
-                        sdFreeMb = status.sd_free_mb,
-                        isOnline = true
-                    )
-                } else {
-                    _deviceStatus.update { it.copy(isOnline = false) }
-                }
+                // Fallback to HTTP
+                fetchDeviceStatusHttp()
             } catch (e: Exception) {
                 Log.e(TAG, "获取设备状态异常: ${e.message}")
                 _deviceStatus.update { it.copy(isOnline = false) }
             }
         }
+    }
+
+    private suspend fun fetchDeviceStatusBle(): Boolean {
+        if (!bleManager.isConnected()) return false
+        if (!bleManager.queryDeviceStatus()) return false
+
+        Log.d(TAG, "BLE 查询设备状态已发送")
+        delay(BLE_RESPONSE_DELAY_MS)
+
+        val data = bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+        if (data == null || data.size < STATUS_DATA_SIZE) return false
+
+        val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(batt_pct = data[0].toInt() and 0xFF)
+        val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
+        _deviceStatus.value = DeviceStatus(battery = battery, firmwareVersion = version, sdFreeMb = 0, isOnline = true)
+        Log.d(TAG, "BLE 获取状态成功: battery=${battery.batt_pct}%, version=$version")
+        querySdCardStatus()
+        return true
+    }
+
+    private suspend fun fetchDeviceStatusHttp() {
+        val status = httpRepository.getDeviceStatus()
+        if (status != null) {
+            _deviceStatus.value = DeviceStatus(
+                battery = status.battery, firmwareVersion = status.version,
+                sdFreeMb = status.sd_free_mb, isOnline = true
+            )
+        } else {
+            _deviceStatus.update { it.copy(isOnline = false) }
+        }
+    }
+
+    /**
+     * Generic BLE command query with timeout and response parsing
+     */
+    private suspend fun <T> queryBleCommand(
+        sendQuery: suspend () -> Boolean,
+        cmd: Byte,
+        timeoutMs: Long = BLE_QUERY_TIMEOUT_MS,
+        minResponseSize: Int = 5,
+        parser: (ByteArray) -> T
+    ): T? {
+        if (!bleManager.isConnected()) return null
+        if (!sendQuery()) return null
+        val resp = withTimeoutOrNull(timeoutMs) {
+            bleManager.cmdResponse.first { it.size >= minResponseSize && it[1] == cmd }
+        }
+        return resp?.let { parser(it) }
     }
 
     /**
@@ -202,54 +220,43 @@ class MonitorViewModel @Inject constructor(
      */
     fun querySdCardStatus() {
         viewModelScope.launch {
-            if (bleManager.isConnected()) {
-                val success = bleManager.querySdCardStatus()
-                if (success) {
-                    Log.d(TAG, "BLE 查询 SD 卡状态已发送")
-                    // Wait for response with timeout
-                    val resp = withTimeoutOrNull(2000L) {
-                        bleManager.cmdResponse.first { it.size >= 7 && it[1] == 0x23.toByte() }
-                    }
-                    if (resp != null) {
-                        val freeMb = ((resp[3].toInt() and 0xFF) shl 8) or (resp[4].toInt() and 0xFF)
-                        val totalMb = ((resp[5].toInt() and 0xFF) shl 8) or (resp[6].toInt() and 0xFF)
-                        Log.d(TAG, "SD 卡响应: free=${freeMb}MB, total=${totalMb}MB")
-                        _deviceStatus.update { it.copy(sdFreeMb = freeMb) }
-                    } else {
-                        Log.w(TAG, "SD 卡查询超时")
-                    }
-                }
+            val result = queryBleCommand(
+                sendQuery = { bleManager.querySdCardStatus() },
+                cmd = 0x23.toByte(),
+                minResponseSize = SD_CARD_RESPONSE_SIZE
+            ) { resp ->
+                val freeMb = ((resp[3].toInt() and 0xFF) shl 8) or (resp[4].toInt() and 0xFF)
+                val totalMb = ((resp[5].toInt() and 0xFF) shl 8) or (resp[6].toInt() and 0xFF)
+                Log.d(TAG, "SD 卡响应: free=${freeMb}MB, total=${totalMb}MB")
+                freeMb
+            }
+            if (result != null) {
+                _deviceStatus.update { it.copy(sdFreeMb = result) }
+            } else {
+                Log.w(TAG, "SD 卡查询超时")
             }
         }
     }
 
     /**
-     * Query battery details via BLE command 0x24
-     * Response frame: [0xAA][0x24][0x03][soc][voltage_h][voltage_l][CHECKSUM]
+     * Query battery via BLE command 0x24
+     * Response frame: [0xAA][0x24][0x01][BATT_PCT][CHECKSUM]
      */
     fun queryBatteryStatus() {
         viewModelScope.launch {
-            if (bleManager.isConnected()) {
-                val success = bleManager.queryBatteryStatus()
-                if (success) {
-                    Log.d(TAG, "BLE 查询电池状态已发送")
-                    // Wait for response with timeout
-                    val resp = withTimeoutOrNull(2000L) {
-                        bleManager.cmdResponse.first { it.size >= 6 && it[1] == 0x24.toByte() }
-                    }
-                    if (resp != null) {
-                        val soc = resp[3].toInt() and 0xFF
-                        val voltage = ((resp[4].toInt() and 0xFF) shl 8) or (resp[5].toInt() and 0xFF)
-                        Log.d(TAG, "电池响应: SOC=${soc}%, voltage=${voltage}mV")
-                        _deviceStatus.update {
-                            it.copy(
-                                battery = BatteryInfo(soc = soc, voltage = voltage)
-                            )
-                        }
-                    } else {
-                        Log.w(TAG, "电池查询超时")
-                    }
-                }
+            val result = queryBleCommand(
+                sendQuery = { bleManager.queryBatteryStatus() },
+                cmd = 0x24.toByte(),
+                minResponseSize = BATTERY_RESPONSE_SIZE
+            ) { resp ->
+                val pct = resp[3].toInt() and 0xFF
+                Log.d(TAG, "电池响应: ${pct}%")
+                pct
+            }
+            if (result != null) {
+                _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = result)) }
+            } else {
+                Log.w(TAG, "电池查询超时")
             }
         }
     }
@@ -262,7 +269,4 @@ class MonitorViewModel @Inject constructor(
         fetchDeviceStatus()
     }
 
-    override fun onCleared() {
-        super.onCleared()
-    }
 }
