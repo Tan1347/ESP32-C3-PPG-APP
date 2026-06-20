@@ -365,14 +365,16 @@ class BleManager @Inject constructor(
         // 设置临时特征读取标记
         pendingReadUuid = uuid
 
-        return suspendCancellableCoroutine { continuation ->
-            pendingReadContinuation = continuation
-            gatt.readCharacteristic(char)
+        return kotlinx.coroutines.withTimeoutOrNull(5000L) {
+            suspendCancellableCoroutine { continuation ->
+                pendingReadContinuation = continuation
+                gatt.readCharacteristic(char)
 
-            // 超时处理
-            continuation.invokeOnCancellation {
-                pendingReadContinuation = null
-                pendingReadUuid = null
+                // 超时处理
+                continuation.invokeOnCancellation {
+                    pendingReadContinuation = null
+                    pendingReadUuid = null
+                }
             }
         }
     }
