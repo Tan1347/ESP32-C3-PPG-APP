@@ -96,8 +96,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-cleanup: never
+          # 启用 Gradle 构建扫描（可选，用于分析构建性能）
+          # arguments: --scan
 
       # ===== 构建阶段 =====
+
+      - name: Start build timer
+        if: steps.check.outputs.need_build == 'true'
+        id: build-start
+        run: echo "time=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Decode release keystore
         if: steps.check.outputs.need_build == 'true'
@@ -122,7 +129,28 @@ jobs:
           KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
           KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
           KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --build-cache --stacktrace --no-daemon
+        run: |
+          # 使用 Gradle 构建优化参数
+          ./gradlew assembleRelease \
+            --build-cache \
+            --parallel \
+            --configure-on-demand \
+            --no-daemon \
+            -Pkotlin.incremental=true \
+            -Pandroid.enableBuildCache=true \
+            -Porg.gradle.unsafe.configuration-cache=true
+
+      - name: Calculate build time
+        if: steps.check.outputs.need_build == 'true'
+        id: build-time
+        run: |
+          START=${{ steps.build-start.outputs.time }}
+          END=$(date +%s)
+          DURATION=$((END - START))
+          MINUTES=$((DURATION / 60))
+          SECONDS=$((DURATION % 60))
+          echo "duration=${MINUTES}m ${SECONDS}s" >> "$GITHUB_OUTPUT"
+          echo "Build completed in ${MINUTES}m ${SECONDS}s"
 
       # ===== 发布阶段 =====
 
@@ -163,6 +191,7 @@ jobs:
             echo "---"
             echo "**版本**: v${{ steps.tag.outputs.version_name }}"
             echo "**构建**: ${{ steps.tag.outputs.tag }}"
+            echo "**构建时间**: ${{ steps.build-time.outputs.duration }}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -189,6 +218,7 @@ jobs:
 
             ---
             **构建**: ${{ steps.tag.outputs.short_sha }}
+            **构建时间**: ${{ steps.build-time.outputs.duration }}
           files: |
             app/build/outputs/apk/release/*.apk
           draft: false

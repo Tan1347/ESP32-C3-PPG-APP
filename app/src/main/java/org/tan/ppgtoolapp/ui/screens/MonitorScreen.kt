@@ -60,6 +60,7 @@ fun MonitorScreen(
             sdFreeMb = deviceStatus.sdFreeMb,
             isOnline = deviceStatus.isOnline,
             onRefreshBattery = { viewModel.queryBatteryStatus() },
+            onRefreshVersion = { viewModel.refreshVersionOnly() },
             onRefreshSdCard = { viewModel.querySdCardStatus() },
             onRefreshAll = { viewModel.refreshDeviceStatus() }
         )
@@ -191,6 +192,7 @@ fun DeviceStatusCard(
     sdFreeMb: Int,
     isOnline: Boolean,
     onRefreshBattery: () -> Unit = {},
+    onRefreshVersion: () -> Unit = {},
     onRefreshSdCard: () -> Unit = {},
     onRefreshAll: () -> Unit = {}
 ) {
@@ -259,13 +261,13 @@ fun DeviceStatusCard(
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
 
-                // 固件版本 - 不可点击
+                // 固件版本 - 可点击刷新
                 StatusItem(
                     icon = Icons.Filled.Memory,
                     label = "版本",
                     value = firmwareVersion.ifBlank { "--" },
                     iconTint = MaterialTheme.colorScheme.primary,
-                    onClick = null
+                    onClick = onRefreshVersion
                 )
 
                 // 分隔线
@@ -280,8 +282,15 @@ fun DeviceStatusCard(
                 StatusItem(
                     icon = Icons.Filled.SdStorage,
                     label = "SD 卡",
-                    value = if (sdFreeMb > 0) "${sdFreeMb}MB" else "--",
-                    iconTint = MaterialTheme.colorScheme.primary,
+                    value = when {
+                        sdFreeMb < 0 -> "--"      // 未加载
+                        sdFreeMb == 0 -> "无卡"   // 已加载但为 0
+                        else -> "${sdFreeMb}MB"
+                    },
+                    iconTint = when {
+                        sdFreeMb <= 0 -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                     onClick = onRefreshSdCard
                 )
             }

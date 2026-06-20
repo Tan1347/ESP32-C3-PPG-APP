@@ -42,7 +42,7 @@ data class PpgData(
 data class DeviceStatus(
     val battery: BatteryInfo? = null,
     val firmwareVersion: String = "",
-    val sdFreeMb: Int = 0,
+    val sdFreeMb: Int = -1,  // -1 表示未加载，0 表示无 SD 卡或容量为 0
     val isOnline: Boolean = false
 )
 
@@ -50,7 +50,7 @@ data class DeviceStatus(
 class MonitorViewModel @Inject constructor(
     private val bleManager: BleManager,
     private val httpRepository: HttpRepository
-) {
+) : ViewModel() {
     companion object {
         private const val TAG = "MonitorViewModel"
         private const val BLE_QUERY_TIMEOUT_MS = 2000L
@@ -59,7 +59,6 @@ class MonitorViewModel @Inject constructor(
         private const val SD_CARD_RESPONSE_SIZE = 7
         private const val BATTERY_RESPONSE_SIZE = 5
     }
-) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
 
@@ -178,9 +177,9 @@ class MonitorViewModel @Inject constructor(
 
         val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(batt_pct = data[0].toInt() and 0xFF)
         val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
-        _deviceStatus.value = DeviceStatus(battery = battery, firmwareVersion = version, sdFreeMb = 0, isOnline = true)
+        _deviceStatus.update { it.copy(battery = battery, firmwareVersion = version, isOnline = true) }
         Log.d(TAG, "BLE 获取状态成功: battery=${battery.batt_pct}%, version=$version")
-        querySdCardStatus()
+        // 不再自动查询 SD 卡，由用户点击触发
         return true
     }
 
@@ -262,9 +261,18 @@ class MonitorViewModel @Inject constructor(
     }
 
     /**
-     * 刷新设备状态（点击时调用）
+     * 刷新全部设备状态（点击时调用）
      */
     fun refreshDeviceStatus() {
+        hasFetchedStatus = false
+        fetchDeviceStatus()
+        querySdCardStatus()
+    }
+
+    /**
+     * 仅刷新版本号（点击版本时调用）
+     */
+    fun refreshVersionOnly() {
         hasFetchedStatus = false
         fetchDeviceStatus()
     }
