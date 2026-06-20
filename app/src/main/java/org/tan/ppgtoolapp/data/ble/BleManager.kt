@@ -467,4 +467,34 @@ class BleManager @Inject constructor(
         cmd[4] = timestamp.toByte()
         return writeCommand(cmd)
     }
+
+    /**
+     * 查询设备完整状态
+     * 固件收到后应更新 Status 特征值
+     * @return 是否发送成功
+     */
+    suspend fun queryDeviceStatus(): Boolean {
+        Log.d(TAG, "查询设备状态: CMD=0x%02X".format(PpgGattProfile.CMD_QUERY_STATUS))
+        return writeCommand(byteArrayOf(PpgGattProfile.CMD_QUERY_STATUS))
+    }
+
+    /**
+     * 查询 SD 卡容量
+     * 固件收到后应更新 Status 特征值中的 SD 卡信息
+     * @return 是否发送成功
+     */
+    suspend fun querySdCardStatus(): Boolean {
+        Log.d(TAG, "查询 SD 卡状态: CMD=0x%02X".format(PpgGattProfile.CMD_QUERY_SD_CARD))
+        return writeCommand(byteArrayOf(PpgGattProfile.CMD_QUERY_SD_CARD))
+    }
+
+    /**
+     * 查询电池详情
+     * 固件收到后应更新 Status 特征值中的电池信息
+     * @return 是否发送成功
+     */
+    suspend fun queryBatteryStatus(): Boolean {
+        Log.d(TAG, "查询电池状态: CMD=0x%02X".format(PpgGattProfile.CMD_QUERY_BATTERY))
+        return writeCommand(byteArrayOf(PpgGattProfile.CMD_QUERY_BATTERY))
+    }
 }

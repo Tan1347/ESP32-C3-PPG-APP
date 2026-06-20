@@ -1,2 +1,2 @@
 -keepattributes *Annotation*
--keep class com.ppgtool.app.data.** { *; }
+-keep class org.tan.ppgtoolapp.data.** { *; }

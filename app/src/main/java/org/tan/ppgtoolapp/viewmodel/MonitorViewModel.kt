@@ -1,5 +1,6 @@
 package org.tan.ppgtoolapp.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.tan.ppgtoolapp.data.ble.BleManager
@@ -14,6 +15,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
+
+private const val TAG = "MonitorViewModel"
 
 /** BLE 数据字节偏移量 */
 private object PpgDataOffset {
@@ -129,6 +132,36 @@ class MonitorViewModel @Inject constructor(
     fun fetchDeviceStatus() {
         viewModelScope.launch {
             try {
+                // 优先通过 BLE 查询
+                if (bleManager.isConnected()) {
+                    val success = bleManager.queryDeviceStatus()
+                    if (success) {
+                        Log.d(TAG, "BLE 查询设备状态已发送")
+                        // BLE 查询结果会通过 Status Notify 返回
+                        // 延迟一小段时间等待响应
+                        delay(500)
+                        // 读取 Status 特征值
+                        val data = bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+                        if (data != null && data.size >= 20) {
+                            val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(
+                                soc = data[0].toInt() and 0xFF,
+                                voltage = ((data[1].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF)
+                            )
+                            val versionBytes = data.copyOfRange(5, 20)
+                            val version = String(versionBytes, Charsets.UTF_8).trim()
+                            _deviceStatus.value = DeviceStatus(
+                                battery = battery,
+                                firmwareVersion = version,
+                                sdFreeMb = 0,  // SD 卡信息需要单独查询
+                                isOnline = true
+                            )
+                            Log.d(TAG, "BLE 获取状态成功: battery=${battery.soc}%, version=$version")
+                            return@launch
+                        }
+                    }
+                }
+
+                // 回退到 HTTP
                 val status = httpRepository.getDeviceStatus()
                 if (status != null) {
                     _deviceStatus.value = DeviceStatus(
@@ -141,7 +174,36 @@ class MonitorViewModel @Inject constructor(
                     _deviceStatus.update { it.copy(isOnline = false) }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "获取设备状态异常: ${e.message}")
                 _deviceStatus.update { it.copy(isOnline = false) }
+            }
+        }
+    }
+
+    /**
+     * 查询 SD 卡容量
+     */
+    fun querySdCardStatus() {
+        viewModelScope.launch {
+            if (bleManager.isConnected()) {
+                val success = bleManager.querySdCardStatus()
+                if (success) {
+                    Log.d(TAG, "BLE 查询 SD 卡状态已发送")
+                }
+            }
+        }
+    }
+
+    /**
+     * 查询电池详情
+     */
+    fun queryBatteryStatus() {
+        viewModelScope.launch {
+            if (bleManager.isConnected()) {
+                val success = bleManager.queryBatteryStatus()
+                if (success) {
+                    Log.d(TAG, "BLE 查询电池状态已发送")
+                }
             }
         }
     }

@@ -33,6 +33,9 @@ object PpgGattProfile {
     const val CMD_TIME_SYNC: Byte = 0x40      // 时间同步
     const val CMD_OTA_ENTER: Byte = 0x20
     const val CMD_FW_VERSION: Byte = 0x21
+    const val CMD_QUERY_STATUS: Byte = 0x22   // 查询完整状态
+    const val CMD_QUERY_SD_CARD: Byte = 0x23  // 查询 SD 卡容量
+    const val CMD_QUERY_BATTERY: Byte = 0x24  // 查询电池详情
     const val CMD_LOG_LEVEL: Byte = 0x30
     const val CMD_LOG_STATUS: Byte = 0x31
     const val CMD_LOG_EXPORT: Byte = 0x32

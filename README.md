@@ -293,7 +293,67 @@ APP 支持两种 WiFi 配网方式：
 - 密码可以为空（开放网络）
 - APP 会自动移除 SSID 中的引号字符
 
-#### 4.3 时间同步
+#### 4.3 设备状态查询
+
+**查询命令格式**：
+
+```
+帧结构:  [CMD]
+字节数:   1
+```
+
+| 命令 | CMD 字节 | 说明 |
+|------|----------|------|
+| 查询完整状态 | 0x22 | 获取电量、版本、WiFi 状态 |
+| 查询 SD 卡 | 0x23 | 获取 SD 卡剩余容量 |
+| 查询电池详情 | 0x24 | 获取电池电量和电压 |
+
+**响应方式**：
+
+固件收到查询命令后，应更新 Status 特征值（0xFFF1），APP 通过 Notify 或 Read 获取更新后的数据。
+
+**Status 特征值数据格式（20 字节）**：
+
+```
+偏移量  长度  字段名        类型      说明
+0       1     battery_soc   uint8     电量百分比 (0-100)
+1-2     2     voltage       uint16    电压 (mV, big-endian)
+3       1     reserved      uint8     保留字段
+4       1     connected     uint8     WiFi 连接状态 (0=未连接, 1=已连接)
+5-19    15    version       char[]    固件版本字符串 (UTF-8, 空格填充)
+```
+
+**固件实现示例**：
+```c
+// 收到查询命令后更新 Status 特征值
+void handle_query_command(uint8_t cmd) {
+    switch (cmd) {
+        case 0x22:  // 查询完整状态
+            status_data[0] = get_battery_soc();
+            uint16_t voltage = get_battery_voltage();
+            status_data[1] = (voltage >> 8) & 0xFF;
+            status_data[2] = voltage & 0xFF;
+            status_data[4] = is_wifi_connected() ? 1 : 0;
+            // version 已在初始化时填充
+            update_status_characteristic(status_data, 20);
+            break;
+
+        case 0x23:  // 查询 SD 卡
+            // SD 卡信息可通过扩展字段或自定义特征值返回
+            break;
+
+        case 0x24:  // 查询电池
+            status_data[0] = get_battery_soc();
+            uint16_t v = get_battery_voltage();
+            status_data[1] = (v >> 8) & 0xFF;
+            status_data[2] = v & 0xFF;
+            update_status_characteristic(status_data, 20);
+            break;
+    }
+}
+```
+
+#### 4.4 时间同步
 
 | 命令 | 字节 | 说明 |
 |------|------|------|
@@ -367,14 +427,14 @@ void process_time_sync(uint8_t *data, uint16_t len) {
 }
 ```
 
-#### 4.4 OTA 升级
+#### 4.5 OTA 升级
 
 | 命令 | 字节 | 说明 |
 |------|------|------|
 | 进入 OTA | `[0x20]` | 设备进入 OTA 模式 |
 | 查询版本 | `[0x21]` | 获取固件版本 |
 
-#### 4.5 日志管理
+#### 4.6 日志管理
 
 | 命令 | 字节 | 说明 |
 |------|------|------|
@@ -537,6 +597,9 @@ val DEVICE_NAME_PREFIXES = listOf(
 | 命令接收 | 0xFFF3 | 解析命令，执行对应操作 |
 | 文件列表 | 0xFFF4 | 返回 TF 卡文件列表 |
 | WiFi 凭据 | CMD 0x10 | 解析帧，校验 checksum，连接 WiFi |
+| 查询状态 | CMD 0x22 | 更新 Status 特征值（电量、版本、WiFi） |
+| 查询 SD 卡 | CMD 0x23 | 更新 Status 特征值（SD 卡容量） |
+| 查询电池 | CMD 0x24 | 更新 Status 特征值（电量、电压） |
 | 时间同步 | CMD 0x40 | 解析帧，设置系统时间 |
 | OTA 模式 | CMD 0x20 | 进入 OTA 等待固件上传 |
 
