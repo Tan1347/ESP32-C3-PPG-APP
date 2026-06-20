@@ -15,11 +15,11 @@ plugins {
 }
 
 android {
-    namespace = "com.ppgtool.app"
+    namespace = "org.tan.ppgtoolapp"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.ppgtool.app"
+        applicationId = "org.tan.ppgtoolapp"
         minSdk = 30
         targetSdk = 35
         versionCode = 1

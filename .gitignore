@@ -12,3 +12,21 @@ local.properties
 # Signing
 release.keystore
 release.keystore.base64
+*.jks
+*.keystore
+
+# Log files
+*.log
+log/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+*.hprof
