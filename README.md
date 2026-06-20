@@ -232,9 +232,9 @@ void process_wifi_credentials(uint8_t *data, uint16_t len) {
 | SSID_DATA | 3~3+N-1 | N | bytes | SSID 字符串 (UTF-8) |
 | PWD_LEN | 3+N ~ 4+N | 2 | uint16 | 密码长度 (big-endian) |
 | PWD_DATA | 5+N ~ 5+N+M-1 | M | bytes | 密码字符串 (UTF-8) |
-| CHECKSUM | 5+N+M | 1 | uint8 | 校验码 (XOR) |
+| CHECKSUM | 5+N+M | 1 | uint8 | 校验码 (SUM) |
 
-**校验码计算**：从 CMD 字节开始，到 PWD_DATA 结束，所有字节异或（XOR）
+**校验码计算**：从 CMD 字节开始，到 PWD_DATA 结束，所有字节求和（SUM，mod 256）
 
 **示例：SSID="MyWiFi", Password="12345678"**：
 ```
@@ -244,7 +244,7 @@ SSID_LEN  6                 00 06
 SSID      "MyWiFi"          4D 79 57 69 46 69
 PWD_LEN   8                 00 08
 PWD       "12345678"        31 32 33 34 35 36 37 38
-CHECKSUM  XOR               5E
+CHECKSUM  SUM               79
 
 完整帧 (21字节):
 10 00 06 4D 79 57 69 46 69 00 08 31 32 33 34 35 36 37 38 5E
@@ -253,20 +253,20 @@ CHECKSUM  XOR               5E
 **校验码计算过程**：
 ```
 checksum = 0x00
-checksum ^= 0x10 = 0x10
-checksum ^= 0x00 = 0x10
-checksum ^= 0x06 = 0x16
-checksum ^= 0x4D = 0x5B
-checksum ^= 0x79 = 0x22
-checksum ^= 0x57 = 0x75
-checksum ^= 0x69 = 0x1C
-checksum ^= 0x46 = 0x5A
-checksum ^= 0x69 = 0x33
-checksum ^= 0x00 = 0x33
-checksum ^= 0x08 = 0x3B
-checksum ^= 0x31 = 0x0A
-checksum ^= 0x32 = 0x38
-checksum ^= 0x33 = 0x0B
+checksum += 0x10 = 0x10
+checksum += 0x00 = 0x10
+checksum += 0x06 = 0x16
+checksum += 0x4D = 0x63
+checksum += 0x79 = 0xDC
+checksum += 0x57 = 0x33 (overflow)
+checksum += 0x69 = 0x9C
+checksum += 0x46 = 0xE2
+checksum += 0x69 = 0x4B (overflow)
+checksum += 0x00 = 0x4B
+checksum += 0x08 = 0x53
+checksum += 0x31 = 0x84
+checksum += 0x32 = 0xB6
+checksum += 0x33 = 0xE9
 checksum ^= 0x34 = 0x3F
 checksum ^= 0x35 = 0x0A
 checksum ^= 0x36 = 0x3C
@@ -310,14 +310,14 @@ APP 支持两种 WiFi 配网方式：
 |------|------|------|------|------|
 | CMD | 0 | 1 | uint8 | 命令 ID: 0x40 |
 | TIMESTAMP | 1-4 | 4 | uint32 | Unix 时间戳 (big-endian, UTC+8) |
-| CHECKSUM | 5 | 1 | uint8 | 校验码 (XOR) |
+| CHECKSUM | 5 | 1 | uint8 | 校验码 (SUM) |
 
 **示例：时间戳=1718688000 (2024-06-18 16:00:00 UTC+8)**：
 ```
 字段       值              十六进制
 CMD        CMD_TIME_SYNC   0x40
 TIMESTAMP  1718688000      66 72 8C 00
-CHECKSUM   XOR             1A
+CHECKSUM   SUM             1A
 
 完整帧 (6字节):
 40 66 72 8C 00 1A
@@ -547,7 +547,7 @@ val DEVICE_NAME_PREFIXES = listOf(
 | APP 扫描不到设备 | 设备名不符合规则 | 使用 "PPG-Monitor" 前缀 |
 | 读取状态全零 | 未初始化 Status 特征值 | 启动时写入初始状态数据 |
 | WiFi 连接失败 | SSID 包含引号 | 检查 SSID 是否正确 |
-| 校验码错误 | 校验算法不一致 | 使用 XOR 校验，参考本文档 |
+| 校验码错误 | 校验算法不一致 | 使用 SUM 校验，参考本文档 |
 | OTA 失败 | 未进入 OTA 模式 | 收到 0x20 命令后进入 OTA 等待 |
 
 ---
@@ -645,7 +645,7 @@ ESP32-C3-PPG-APP/
 | GATT 服务 | UUID: 0000fff0-... |
 | Status 特征值 | 必须初始化并定期更新 |
 | 命令接收 | 支持 0x01-0x40 命令 |
-| 校验码 | 所有命令帧使用 XOR 校验 |
+| 校验码 | 所有命令帧使用 SUM 校验 |
 | WiFi SSID | 不包含引号字符 |
 | 时间戳 | UTC+8 时区，10位秒级 |
 
@@ -674,7 +674,7 @@ ESP32-C3-PPG-APP/
 
 **Q: WiFi 配网失败？**
 - 检查日志中的 BLE 帧十六进制数据
-- 确认固件校验码算法与 APP 一致（XOR）
+- 确认固件校验码算法与 APP 一致（SUM）
 - 确认 SSID 不包含多余引号
 - 隐藏 WiFi 使用「手动添加」功能
 

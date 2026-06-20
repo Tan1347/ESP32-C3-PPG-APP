@@ -136,30 +136,24 @@ class WifiProvisionViewModel @Inject constructor(
                 pwdBytes.copyInto(command, offset)
                 offset += pwdBytes.size
 
-                // 计算校验码（从命令ID开始，到密码结束，所有字节异或）
-                var checksum: Byte = 0
-                for (i in 0 until offset) {
-                    checksum = (checksum.toInt() xor command[i].toInt()).toByte()
-                }
-                command[offset] = checksum
+                // Note: Frame checksum is handled by BleManager.buildFrame() using SUM
 
-                // ====== BLE 帧详细日志 ======
+                // ====== BLE frame debug log ======
                 Log.i(TAG, "========================================")
-                Log.i(TAG, "BLE WiFi 凭据帧详情")
+                Log.i(TAG, "BLE WiFi Credential Frame")
                 Log.i(TAG, "========================================")
                 Log.i(TAG, "SSID: \"${network.ssid}\"")
-                Log.i(TAG, "密码: \"${password}\"")
+                Log.i(TAG, "Password: \"${password}\"")
                 Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "帧结构:")
-                Log.i(TAG, "  命令ID:     0x%02X (CMD_WIFI_ADD)".format(command[0]))
-                Log.i(TAG, "  SSID长度:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
-                Log.i(TAG, "  SSID数据:   ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"${network.ssid}\")")
+                Log.i(TAG, "Frame structure:")
+                Log.i(TAG, "  CMD:        0x%02X (CMD_WIFI_ADD)".format(command[0]))
+                Log.i(TAG, "  SSID_LEN:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
+                Log.i(TAG, "  SSID_DATA:  ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"${network.ssid}\")")
                 val pwdLenOffset = 3 + ssidBytes.size
-                Log.i(TAG, "  密码长度:   ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
-                Log.i(TAG, "  密码数据:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "  校验码:     0x%02X (XOR)".format(checksum))
+                Log.i(TAG, "  PWD_LEN:    ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
+                Log.i(TAG, "  PWD_DATA:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
                 Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "完整帧(${command.size}字节): ${command.joinToString(" ") { "%02X".format(it) }}")
+                Log.i(TAG, "Raw data(${command.size} bytes): ${command.joinToString(" ") { "%02X".format(it) }}")
                 Log.i(TAG, "========================================")
 
                 val success = bleManager.writeCommand(command)
@@ -250,30 +244,24 @@ class WifiProvisionViewModel @Inject constructor(
                 pwdBytes.copyInto(command, offset)
                 offset += pwdBytes.size
 
-                // 计算校验码（从命令ID开始，到密码结束，所有字节异或）
-                var checksum: Byte = 0
-                for (i in 0 until offset) {
-                    checksum = (checksum.toInt() xor command[i].toInt()).toByte()
-                }
-                command[offset] = checksum
+                // Note: Frame checksum is handled by BleManager.buildFrame() using SUM
 
-                // ====== BLE 帧详细日志 ======
+                // ====== BLE frame debug log ======
                 Log.i(TAG, "========================================")
-                Log.i(TAG, "BLE WiFi 凭据帧详情 (手动添加)")
+                Log.i(TAG, "BLE WiFi Credential Frame (Manual)")
                 Log.i(TAG, "========================================")
                 Log.i(TAG, "SSID: \"$ssid\"")
-                Log.i(TAG, "密码: \"$password\"")
+                Log.i(TAG, "Password: \"$password\"")
                 Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "帧结构:")
-                Log.i(TAG, "  命令ID:     0x%02X (CMD_WIFI_ADD)".format(command[0]))
-                Log.i(TAG, "  SSID长度:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
-                Log.i(TAG, "  SSID数据:   ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"$ssid\")")
+                Log.i(TAG, "Frame structure:")
+                Log.i(TAG, "  CMD:        0x%02X (CMD_WIFI_ADD)".format(command[0]))
+                Log.i(TAG, "  SSID_LEN:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
+                Log.i(TAG, "  SSID_DATA:  ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"$ssid\")")
                 val pwdLenOffset = 3 + ssidBytes.size
-                Log.i(TAG, "  密码长度:   ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
-                Log.i(TAG, "  密码数据:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "  校验码:     0x%02X (XOR)".format(checksum))
+                Log.i(TAG, "  PWD_LEN:    ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
+                Log.i(TAG, "  PWD_DATA:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
                 Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "完整帧(${command.size}字节): ${command.joinToString(" ") { "%02X".format(it) }}")
+                Log.i(TAG, "Raw data(${command.size} bytes): ${command.joinToString(" ") { "%02X".format(it) }}")
                 Log.i(TAG, "========================================")
 
                 val success = bleManager.writeCommand(command)
