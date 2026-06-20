@@ -43,23 +43,48 @@ jobs:
             echo "need_build=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check if release tag exists
+      - name: Auto increment version
         if: steps.check.outputs.need_build == 'true'
         id: tag
         run: |
-          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          # 从 build.gradle.kts 读取当前版本
+          FILE_VERSION=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          echo "File version: $FILE_VERSION"
+
+          # 从最新 tag 提取版本号（如 v1.0.3-abc1234 -> 1.0.3）
+          LATEST_TAG=$(git tag -l 'v*' --sort=-creatordate | head -n1)
+          if [ -n "$LATEST_TAG" ]; then
+            TAG_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//' | sed 's/-.*$//')
+          else
+            TAG_VERSION="0.0.0"
+          fi
+          echo "Latest tag version: $TAG_VERSION"
+
+          # 取较大值作为基础版本
+          if [ "$(printf '%s\n' "$FILE_VERSION" "$TAG_VERSION" | sort -V | tail -n1)" = "$FILE_VERSION" ]; then
+            BASE_VERSION="$FILE_VERSION"
+          else
+            BASE_VERSION="$TAG_VERSION"
+          fi
+          echo "Base version: $BASE_VERSION"
+
+          # 递增 patch 版本号
+          MAJOR=$(echo "$BASE_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$BASE_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$BASE_VERSION" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          VERSION_NAME="${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+          # 更新 build.gradle.kts
+          sed -i "s/versionName = \"$FILE_VERSION\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          echo "Updated versionName: $FILE_VERSION -> $VERSION_NAME"
+
           SHORT_SHA=$(git rev-parse --short HEAD)
           TAG="v${VERSION_NAME}-${SHORT_SHA}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
-
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping"
-            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "tag_exists=false" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
