@@ -1,6 +1,8 @@
 package org.tan.ppgtoolapp.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -35,12 +37,6 @@ fun MonitorScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
 
-    // 启动设备状态轮询
-    LaunchedEffect(Unit) {
-        viewModel.fetchDeviceStatus()
-        viewModel.startStatusPolling()
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -57,12 +53,15 @@ fun MonitorScreen(
                 .height(200.dp)
         )
 
-        // 设备状态卡片
+        // 设备状态卡片（点击可刷新）
         DeviceStatusCard(
             battery = deviceStatus.battery,
             firmwareVersion = deviceStatus.firmwareVersion,
             sdFreeMb = deviceStatus.sdFreeMb,
-            isOnline = deviceStatus.isOnline
+            isOnline = deviceStatus.isOnline,
+            onRefreshBattery = { viewModel.queryBatteryStatus() },
+            onRefreshSdCard = { viewModel.querySdCardStatus() },
+            onRefreshAll = { viewModel.refreshDeviceStatus() }
         )
 
         // 数据卡片
@@ -190,7 +189,10 @@ fun DeviceStatusCard(
     battery: org.tan.ppgtoolapp.data.network.BatteryInfo?,
     firmwareVersion: String,
     sdFreeMb: Int,
-    isOnline: Boolean
+    isOnline: Boolean,
+    onRefreshBattery: () -> Unit = {},
+    onRefreshSdCard: () -> Unit = {},
+    onRefreshAll: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -199,15 +201,38 @@ fun DeviceStatusCard(
             else MaterialTheme.colorScheme.errorContainer
         )
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            // 电量
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // 标题行 - 点击刷新全部
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onRefreshAll() }
+                    .padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "设备状态",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Icon(
-                    when {
+                    Icons.Filled.Refresh,
+                    contentDescription = "刷新全部",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // 状态项
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // 电量 - 可点击刷新
+                StatusItem(
+                    icon = when {
                         battery == null -> Icons.AutoMirrored.Filled.BatteryUnknown
                         battery.soc >= 80 -> Icons.Filled.BatteryFull
                         battery.soc >= 50 -> Icons.Filled.Battery5Bar
@@ -215,51 +240,91 @@ fun DeviceStatusCard(
                         battery.soc >= 10 -> Icons.Filled.Battery1Bar
                         else -> Icons.Filled.Battery0Bar
                     },
-                    contentDescription = null,
-                    tint = when {
+                    label = "电量",
+                    value = if (battery != null) "${battery.soc}%" else "--",
+                    iconTint = when {
                         battery == null -> MaterialTheme.colorScheme.onSurfaceVariant
                         battery.soc >= 30 -> SpO2Normal
                         battery.soc >= 10 -> SpO2Warning
                         else -> SpO2Danger
                     },
-                    modifier = Modifier.size(28.dp)
+                    onClick = onRefreshBattery
                 )
-                Text(
-                    if (battery != null) "${battery.soc}%" else "--",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
 
-            // 固件版本
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Filled.Memory,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                // 分隔线
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
                 )
-                Text(
-                    firmwareVersion.ifBlank { "--" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
 
-            // SD 卡
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Filled.SdStorage,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                // 固件版本 - 不可点击
+                StatusItem(
+                    icon = Icons.Filled.Memory,
+                    label = "版本",
+                    value = firmwareVersion.ifBlank { "--" },
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    onClick = null
                 )
-                Text(
-                    if (sdFreeMb > 0) "${sdFreeMb}MB" else "--",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+
+                // 分隔线
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+
+                // SD 卡 - 可点击刷新
+                StatusItem(
+                    icon = Icons.Filled.SdStorage,
+                    label = "SD 卡",
+                    value = if (sdFreeMb > 0) "${sdFreeMb}MB" else "--",
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    onClick = onRefreshSdCard
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun StatusItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    iconTint: androidx.compose.ui.graphics.Color,
+    onClick: (() -> Unit)?
+) {
+    Surface(
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null,
+        shape = MaterialTheme.shapes.small,
+        color = Color.Transparent,
+        modifier = Modifier.padding(horizontal = 4.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

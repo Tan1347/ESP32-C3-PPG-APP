@@ -8,7 +8,6 @@ import org.tan.ppgtoolapp.data.ble.ConnectionState
 import org.tan.ppgtoolapp.data.network.BatteryInfo
 import org.tan.ppgtoolapp.data.network.HttpRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.*
@@ -73,10 +72,11 @@ class MonitorViewModel @Inject constructor(
     private val redBuffer = mutableListOf<Float>()
     private val irBuffer = mutableListOf<Float>()
 
-    // 状态轮询 Job，防止重复启动
-    private var pollingJob: Job? = null
+    // 标记是否已查询过状态（防止重复查询）
+    private var hasFetchedStatus = false
 
     init {
+        // 监听 Live Data
         viewModelScope.launch {
             bleManager.liveData.collect { data ->
                 if (data.size >= PpgDataOffset.MIN_DATA_SIZE) {
@@ -101,6 +101,19 @@ class MonitorViewModel @Inject constructor(
                             irValues = irBuffer.toList()
                         )
                     }
+                }
+            }
+        }
+
+        // 监听连接状态，连接成功后自动查询一次
+        viewModelScope.launch {
+            bleManager.connectionState.collect { state ->
+                if (state is ConnectionState.Connected && !hasFetchedStatus) {
+                    hasFetchedStatus = true
+                    Log.d(TAG, "BLE 已连接，自动查询设备状态")
+                    fetchDeviceStatus()
+                } else if (state is ConnectionState.Disconnected) {
+                    hasFetchedStatus = false
                 }
             }
         }
@@ -220,27 +233,36 @@ class MonitorViewModel @Inject constructor(
                 val success = bleManager.queryBatteryStatus()
                 if (success) {
                     Log.d(TAG, "BLE 查询电池状态已发送")
+                    // Wait for response with timeout
+                    val resp = withTimeoutOrNull(2000L) {
+                        bleManager.cmdResponse.first { it.size >= 6 && it[1] == 0x24.toByte() }
+                    }
+                    if (resp != null) {
+                        val soc = resp[3].toInt() and 0xFF
+                        val voltage = ((resp[4].toInt() and 0xFF) shl 8) or (resp[5].toInt() and 0xFF)
+                        Log.d(TAG, "电池响应: SOC=${soc}%, voltage=${voltage}mV")
+                        _deviceStatus.update {
+                            it.copy(
+                                battery = BatteryInfo(soc = soc, voltage = voltage)
+                            )
+                        }
+                    } else {
+                        Log.w(TAG, "电池查询超时")
+                    }
                 }
             }
         }
     }
 
     /**
-     * 定时刷新设备状态（每 30 秒）
-     * 使用 Job 引用防止重复启动
+     * 刷新设备状态（点击时调用）
      */
-    fun startStatusPolling() {
-        pollingJob?.cancel()
-        pollingJob = viewModelScope.launch {
-            while (true) {
-                fetchDeviceStatus()
-                delay(30_000)
-            }
-        }
+    fun refreshDeviceStatus() {
+        hasFetchedStatus = false
+        fetchDeviceStatus()
     }
 
     override fun onCleared() {
         super.onCleared()
-        pollingJob?.cancel()
     }
 }

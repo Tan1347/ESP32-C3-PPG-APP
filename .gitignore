@@ -9,6 +9,9 @@
 .cxx
 local.properties
 
+# Kotlin
+.kotlin
+
 # Signing
 release.keystore
 release.keystore.base64
