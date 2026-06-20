@@ -38,7 +38,7 @@ fun DataScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // WiFi hint
+        // WiFi 提示
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -47,15 +47,15 @@ fun DataScreen(
                 Icon(Icons.Filled.Wifi, contentDescription = null)
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("Data Download", style = MaterialTheme.typography.titleMedium)
-                    Text("Phone and device must be on the same WiFi", style = MaterialTheme.typography.bodySmall)
+                    Text("数据下载", style = MaterialTheme.typography.titleMedium)
+                    Text("手机和设备需在同一 WiFi 网络", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        // Refresh + batch buttons
+        // 刷新 + 批量按钮
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { viewModel.loadFileList() },
@@ -68,10 +68,10 @@ fun DataScreen(
                 }
                 Icon(Icons.Filled.Refresh, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
-                Text("Refresh")
+                Text("刷新")
             }
 
-            // Download All button
+            // 全部下载按钮
             if (state.fileList.isNotEmpty()) {
                 val pendingCount = state.fileList.count { file -> !state.downloadedFiles.any { it.fileName == file } }
                 OutlinedButton(
@@ -80,17 +80,17 @@ fun DataScreen(
                 ) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
-                    Text("All ($pendingCount)")
+                    Text("全部 ($pendingCount)")
                 }
             }
         }
 
-        // Download progress
+        // 下载进度
         if (state.isDownloading) {
             Spacer(Modifier.height(12.dp))
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Downloading: ${state.downloadFileName}", style = MaterialTheme.typography.bodyMedium)
+                    Text("正在下载: ${state.downloadFileName}", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
                         progress = { state.downloadProgress / 100f },
@@ -104,9 +104,9 @@ fun DataScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Device file list
+        // 设备文件列表
         if (state.fileList.isNotEmpty()) {
-            Text("TF Card Files (${state.fileList.size})", style = MaterialTheme.typography.titleMedium)
+            Text("TF 卡文件 (${state.fileList.size})", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
             LazyColumn(
@@ -129,16 +129,16 @@ fun DataScreen(
                         modifier = Modifier.size(64.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    Text("Tap 'Refresh File List' to load files",
+                    Text("点击「刷新」加载文件列表",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
 
-        // Downloaded files
+        // 已下载文件
         if (state.downloadedFiles.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            Text("Downloaded (${state.downloadedFiles.size})", style = MaterialTheme.typography.titleMedium)
+            Text("已下载 (${state.downloadedFiles.size})", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -178,11 +178,11 @@ private fun FileListItem(filename: String, isDownloaded: Boolean, onDownload: ()
             Spacer(Modifier.width(12.dp))
             Text(filename.substringAfterLast("/"), modifier = Modifier.weight(1f))
             if (isDownloaded) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = "Downloaded",
+                Icon(Icons.Filled.CheckCircle, contentDescription = "已下载",
                     tint = MaterialTheme.colorScheme.primary)
             } else {
                 IconButton(onClick = onDownload) {
-                    Icon(Icons.Filled.Download, contentDescription = "Download")
+                    Icon(Icons.Filled.Download, contentDescription = "下载")
                 }
             }
         }
@@ -196,10 +196,10 @@ private fun DownloadedFileItem(metadata: FileMetadata, onDelete: () -> Unit, onA
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete File") },
-            text = { Text("Delete ${metadata.fileName.substringAfterLast("/")}?") },
-            confirmButton = { TextButton(onClick = { onDelete(); showDeleteDialog = false }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+            title = { Text("删除文件") },
+            text = { Text("确定删除 ${metadata.fileName.substringAfterLast("/")} ?") },
+            confirmButton = { TextButton(onClick = { onDelete(); showDeleteDialog = false }) { Text("删除") } },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("取消") } }
         )
     }
 
@@ -224,11 +224,11 @@ private fun DownloadedFileItem(metadata: FileMetadata, onDelete: () -> Unit, onA
             }
             if (metadata.fileType == FileType.PPG_RESULT) {
                 IconButton(onClick = onAnalyze) {
-                    Icon(Icons.Filled.Analytics, contentDescription = "Analyze", tint = MaterialTheme.colorScheme.primary)
+                    Icon(Icons.Filled.Analytics, contentDescription = "分析", tint = MaterialTheme.colorScheme.primary)
                 }
             }
             IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
             }
         }
     }

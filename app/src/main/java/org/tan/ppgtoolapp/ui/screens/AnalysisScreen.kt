@@ -40,7 +40,7 @@ fun AnalysisScreen(
             statistics = PpgAnalyzer.analyze(records)
             isLoading = false
         } catch (e: Exception) {
-            error = "Parse failed: ${e.message}"
+            error = "解析失败: ${e.message}"
             isLoading = false
         }
     }
@@ -51,32 +51,32 @@ fun AnalysisScreen(
                 title = { Text(fileName.substringAfterLast("/")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
-                    // Export CSV
+                    // 导出 CSV
                     IconButton(onClick = {
                         val file = ExportHelper.exportCsv(context, records, fileName)
                         if (file != null) {
                             ExportHelper.shareFile(context, file, "text/csv")
                         } else {
-                            Toast.makeText(context, "CSV export failed", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "CSV 导出失败", Toast.LENGTH_SHORT).show()
                         }
                     }) {
-                        Icon(Icons.Filled.TableChart, contentDescription = "Export CSV")
+                        Icon(Icons.Filled.TableChart, contentDescription = "导出 CSV")
                     }
-                    // Export PDF
+                    // 导出 PDF
                     if (statistics != null) {
                         IconButton(onClick = {
                             val file = ExportHelper.exportPdf(context, statistics!!, fileName)
                             if (file != null) {
                                 ExportHelper.shareFile(context, file, "application/pdf")
                             } else {
-                                Toast.makeText(context, "PDF export failed", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "PDF 导出失败", Toast.LENGTH_SHORT).show()
                             }
                         }) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "Export PDF")
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "导出 PDF")
                         }
                     }
                 }
@@ -96,7 +96,7 @@ fun AnalysisScreen(
             }
             statistics == null -> {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    Text("No valid data", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("无有效数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             else -> {
@@ -109,53 +109,53 @@ fun AnalysisScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Overview
+                    // 概览
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Overview", style = MaterialTheme.typography.titleMedium)
+                            Text("概览", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                StatItem("Records", "${stats.recordCount}")
-                                StatItem("Duration", PpgAnalyzer.formatDuration(stats.durationSeconds))
+                                StatItem("记录数", "${stats.recordCount}")
+                                StatItem("时长", PpgAnalyzer.formatDuration(stats.durationSeconds))
                             }
                         }
                     }
 
-                    // Heart Rate
+                    // 心率
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Heart Rate (HR)", style = MaterialTheme.typography.titleMedium)
+                            Text("心率 (HR)", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                StatItem("Average", String.format("%.1f BPM", stats.hrAvg))
-                                StatItem("Min", "${stats.hrMin} BPM")
-                                StatItem("Max", "${stats.hrMax} BPM")
+                                StatItem("平均", String.format("%.1f BPM", stats.hrAvg))
+                                StatItem("最低", "${stats.hrMin} BPM")
+                                StatItem("最高", "${stats.hrMax} BPM")
                             }
                             Spacer(Modifier.height(4.dp))
-                            Text("Std Dev: ${String.format("%.1f", stats.hrStdDev)} BPM",
+                            Text("标准差: ${String.format("%.1f", stats.hrStdDev)} BPM",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
-                    // SpO2
+                    // 血氧
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Blood Oxygen (SpO2)", style = MaterialTheme.typography.titleMedium)
+                            Text("血氧 (SpO2)", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                StatItem("Average", String.format("%.1f%%", stats.spo2Avg))
-                                StatItem("Min", "${stats.spo2Min}%")
-                                StatItem("Max", "${stats.spo2Max}%")
+                                StatItem("平均", String.format("%.1f%%", stats.spo2Avg))
+                                StatItem("最低", "${stats.spo2Min}%")
+                                StatItem("最高", "${stats.spo2Max}%")
                             }
                             Spacer(Modifier.height(4.dp))
-                            Text("Std Dev: ${String.format("%.1f", stats.spo2StdDev)}%",
+                            Text("标准差: ${String.format("%.1f", stats.spo2StdDev)}%",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
-                    // SpO2 Events
+                    // 血氧事件
                     if (stats.spo2Events.isNotEmpty()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -166,15 +166,15 @@ fun AnalysisScreen(
                                     Icon(Icons.Filled.Warning, contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error)
                                     Spacer(Modifier.width(8.dp))
-                                    Text("SpO2 Desaturation Events", style = MaterialTheme.typography.titleMedium,
+                                    Text("血氧去饱和事件", style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.error)
                                 }
                                 Spacer(Modifier.height(8.dp))
-                                Text("${stats.spo2Events.size} event(s) with SpO2 < 90% for > 10s",
+                                Text("${stats.spo2Events.size} 次 SpO2 < 90% 超过 10 秒",
                                     style = MaterialTheme.typography.bodyMedium)
                                 stats.spo2Events.forEach { event ->
                                     Spacer(Modifier.height(4.dp))
-                                    Text("  Min SpO2: ${event.minSpo2}%, Duration: ${event.durationSeconds}s",
+                                    Text("  最低 SpO2: ${event.minSpo2}%, 持续: ${event.durationSeconds}秒",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
                             }
@@ -188,7 +188,7 @@ fun AnalysisScreen(
                                 Icon(Icons.Filled.CheckCircle, contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(8.dp))
-                                Text("No SpO2 desaturation events detected", style = MaterialTheme.typography.bodyMedium)
+                                Text("未检测到血氧去饱和事件", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }

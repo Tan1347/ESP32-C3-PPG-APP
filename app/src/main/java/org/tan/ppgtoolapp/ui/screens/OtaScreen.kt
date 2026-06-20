@@ -152,7 +152,7 @@ fun OtaScreen(
                     Text("当前固件版本", style = MaterialTheme.typography.bodySmall)
                     Text(state.deviceVersion, style = MaterialTheme.typography.headlineMedium)
                 }
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
