@@ -256,11 +256,23 @@ class BleManager @Inject constructor(
                     }
                 }
 
+                // Android 13+ (API 33) new callback signature
+                override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+                    Log.d(TAG, "onCharacteristicRead(API33): uuid=${characteristic.uuid}, status=$status, value.size=${value.size}")
+                    handleCharacteristicRead(characteristic.uuid, value, status)
+                }
+
+                // Android 12 and below legacy callback
                 override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+                    Log.d(TAG, "onCharacteristicRead(Legacy): uuid=${characteristic.uuid}, status=$status, value.size=${characteristic.value?.size}")
+                    handleCharacteristicRead(characteristic.uuid, characteristic.value, status)
+                }
+
+                private fun handleCharacteristicRead(uuid: UUID, value: ByteArray?, status: Int) {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
-                        when (characteristic.uuid) {
+                        when (uuid) {
                             PpgGattProfile.CHAR_STATUS -> {
-                                characteristic.value?.let { data ->
+                                value?.let { data ->
                                     Log.d(TAG, "Status Read: ${data.joinToString(" ") { "%02X".format(it) }}")
                                     _statusData.tryEmit(data)
                                 }
@@ -269,13 +281,13 @@ class BleManager @Inject constructor(
                     }
 
                     // 处理 readCharacteristic 的异步结果
-                    if (characteristic.uuid == pendingReadUuid) {
-                        val value = if (status == BluetoothGatt.GATT_SUCCESS) {
-                            characteristic.value?.also { data ->
-                                Log.d(TAG, "Read ${characteristic.uuid}: ${data.joinToString(" ") { "%02X".format(it) }}")
+                    if (uuid == pendingReadUuid) {
+                        val result = if (status == BluetoothGatt.GATT_SUCCESS) {
+                            value?.also { data ->
+                                Log.d(TAG, "Read $uuid: ${data.joinToString(" ") { "%02X".format(it) }}")
                             }
                         } else null
-                        pendingReadContinuation?.resume(value)
+                        pendingReadContinuation?.resume(result)
                         pendingReadContinuation = null
                         pendingReadUuid = null
                     }
