@@ -49,14 +49,13 @@ jobs:
         run: |
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
           SHORT_SHA=$(git rev-parse --short HEAD)
-          TAG="v${VERSION_NAME}"
+          TAG="v${VERSION_NAME}-${SHORT_SHA}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
-          # 检查 tag 是否存在，如果存在则删除（覆盖发布）
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG exists, will overwrite"
+            echo "Tag $TAG already exists, skipping"
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag_exists=false" >> "$GITHUB_OUTPUT"
@@ -71,7 +70,6 @@ jobs:
 
       # ===== 缓存策略 =====
 
-      # 1. Android SDK 缓存（setup-gradle 不管理，需手动缓存）
       - name: Cache Android SDK
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: actions/cache@v4
@@ -79,25 +77,22 @@ jobs:
           path: /usr/local/lib/android/sdk/build-tools/35.0.0
           key: android-sdk-35.0.0
 
-      # 2. app/build 产物缓存（增量编译关键）
       - name: Cache app build
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: actions/cache@v4
         with:
           path: app/build
-          key: app-build-${{ github.sha }}
+          key: app-build-${{ hashFiles('app/build.gradle.kts', 'gradle.properties') }}
           restore-keys: |
             app-build-${{ github.ref_name }}-
             app-build-
 
-      # 3. Gradle 缓存由 setup-gradle 自动管理
       - name: Setup Gradle
         if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: gradle/actions/setup-gradle@v4
         with:
+          cache-read-only: false
           cache-cleanup: never
-          # 启用 Gradle 构建扫描（可选，用于分析构建性能）
-          # arguments: --scan
 
       # ===== 构建阶段 =====
 
@@ -131,14 +126,15 @@ jobs:
           KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
         run: |
           # 使用 Gradle 构建优化参数
+          # - 移除 --no-daemon 以启用配置缓存
+          # - 跳过 Lint 检查和测试以加速构建
           ./gradlew assembleRelease \
             --build-cache \
             --parallel \
             --configure-on-demand \
-            --no-daemon \
-            -Pkotlin.incremental=true \
-            -Pandroid.enableBuildCache=true \
-            -Porg.gradle.unsafe.configuration-cache=true
+            -Porg.gradle.unsafe.configuration-cache=true \
+            -x lintVitalRelease \
+            -x test
 
       - name: Calculate build time
         if: steps.check.outputs.need_build == 'true'
@@ -159,73 +155,116 @@ jobs:
         id: notes
         run: |
           CURRENT_TAG="${{ steps.tag.outputs.tag }}"
-          # 排除当前 tag，按创建时间排序取上一个版本
+          CURRENT_VERSION="${{ steps.tag.outputs.version_name }}"
+          CURRENT_SHA="${{ steps.tag.outputs.short_sha }}"
+
+          echo "Current tag: $CURRENT_TAG"
+
+          # 查找上一个 tag（按时间排序，排除当前 tag）
           PREV_TAG=$(git tag -l 'v*' --sort=-creatordate | grep -v "^${CURRENT_TAG}$" | head -n1)
+          echo "Previous tag: $PREV_TAG"
+
+          # 确定比较范围
           if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..HEAD"
-            echo "Comparing: $PREV_TAG..HEAD"
+            PREV_SHA=$(git rev-parse "$PREV_TAG^{}" 2>/dev/null || git rev-parse "$PREV_TAG")
+            RANGE="${PREV_SHA}..HEAD"
+            echo "Comparing: $PREV_TAG ($PREV_SHA)..HEAD"
           else
-            RANGE="HEAD~10..HEAD"
-            echo "No previous tag, using last 10 commits"
+            RANGE="HEAD~20..HEAD"
+            echo "No previous tag found, using last 20 commits"
           fi
 
-          COMMITS=$(git log "$RANGE" --pretty=format:"%h %s" --no-merges -10 | while IFS= read -r line; do
-            # 限制每行200字符
-            if [ ${#line} -gt 200 ]; then
-              line="${line:0:197}..."
+          # 按 conventional commits 分类获取提交
+          FEAT=""
+          FIX=""
+          OTHER=""
+          COMMIT_COUNT=0
+          while IFS='|' read -r hash subject date; do
+            [ -z "$hash" ] && continue
+            COMMIT_COUNT=$((COMMIT_COUNT + 1))
+            short_date=$(echo "$date" | cut -d' ' -f1)
+            if [ ${#subject} -gt 120 ]; then
+              subject="${subject:0:117}..."
             fi
-            echo "- $line"
-          done)
+            line="- \`${hash}\` ${subject} (${short_date})"
+            case "$subject" in
+              feat:*|Feat:*) printf -v FEAT '%s%s\n' "$FEAT" "$line" ;;
+              fix:*|Fix:*) printf -v FIX '%s%s\n' "$FIX" "$line" ;;
+              *) printf -v OTHER '%s%s\n' "$OTHER" "$line" ;;
+            esac
+          done < <(git log "$RANGE" --pretty=format:'%h|%s|%ai' --no-merges -20)
+
+          # 获取 APK 文件大小
+          APK_SIZE=""
+          APK_PATH=$(find app/build/outputs/apk/release/ -name '*.apk' -print -quit 2>/dev/null)
+          if [ -n "$APK_PATH" ]; then
+            APK_BYTES=$(stat -c%s "$APK_PATH" 2>/dev/null || echo 0)
+            APK_SIZE="$((APK_BYTES / 1024 / 1024))MB"
+          fi
 
           # 写入多行输出
           {
             echo "body<<EOF"
             echo "## 更新内容"
             echo ""
-            if [ -n "$COMMITS" ]; then
-              echo "$COMMITS"
+            if [ -n "$PREV_TAG" ]; then
+              echo "### 自 $PREV_TAG 以来的变更"
             else
+              echo "### 最近提交"
+            fi
+            echo ""
+            if [ -n "$FEAT" ]; then
+              echo "#### ✨ 新功能"
+              echo -e "$FEAT"
+            fi
+            if [ -n "$FIX" ]; then
+              echo "#### 🐛 修复"
+              echo -e "$FIX"
+            fi
+            if [ -n "$OTHER" ]; then
+              if [ -n "$FEAT" ] || [ -n "$FIX" ]; then
+                echo "#### 📦 其他"
+              fi
+              echo -e "$OTHER"
+            fi
+            if [ "$COMMIT_COUNT" -eq 0 ]; then
               echo "- 无提交记录"
+            fi
+            if [ "$COMMIT_COUNT" -gt 20 ]; then
+              echo "> 共 ${COMMIT_COUNT} 个提交，仅显示最近 20 个"
             fi
             echo ""
             echo "---"
-            echo "**版本**: v${{ steps.tag.outputs.version_name }}"
-            echo "**构建**: ${{ steps.tag.outputs.tag }}"
-            echo "**构建时间**: ${{ steps.build-time.outputs.duration }}"
+            echo "### 构建信息"
+            echo "| 项目 | 值 |"
+            echo "|------|-----|"
+            echo "| 版本 | v${CURRENT_VERSION} |"
+            echo "| 构建 | ${CURRENT_TAG} |"
+            echo "| 提交 | ${CURRENT_SHA} |"
+            echo "| 构建时间 | ${{ steps.build-time.outputs.duration }} |"
+            if [ -n "$APK_SIZE" ]; then
+              echo "| APK 大小 | ${APK_SIZE} |"
+            fi
+            if [ -n "$PREV_TAG" ]; then
+              echo "| 上一版本 | ${PREV_TAG} |"
+            fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Delete old release if exists
-        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          echo "Deleting old release for $TAG..."
-          gh release delete "$TAG" --yes --cleanup-tag || true
-          echo "Old release deleted."
-
       - name: Create Release
-        if: steps.check.outputs.need_build == 'true'
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "v${{ steps.tag.outputs.version_name }}"
-          body: |
-            ## 更新内容
-
-            ${{ steps.notes.outputs.body }}
-
-            ---
-            **构建**: ${{ steps.tag.outputs.short_sha }}
-            **构建时间**: ${{ steps.build-time.outputs.duration }}
+          body: ${{ steps.notes.outputs.body }}
           files: |
             app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
 
       - name: Upload APK artifact
-        if: steps.check.outputs.need_build == 'true'
+        if: steps.check.outputs.need_build == 'true' && steps.tag.outputs.tag_exists == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ steps.tag.outputs.tag }}
@@ -240,29 +279,8 @@ jobs:
         run: |
           echo "Cleaning old caches..."
 
-          # 清理所有旧缓存，只保留最新的
-          # 1. 清理 gradle-home 缓存（保留最新 1 份）
-          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("gradle-home-"))] | sort_by(.created_at) | reverse | .[1:] | .[].id')
-          if [ -n "$CACHES" ]; then
-            COUNT=$(echo "$CACHES" | wc -l)
-            echo "Deleting $COUNT old gradle-home cache(s)..."
-            echo "$CACHES" | while read -r id; do
-              gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
-            done
-          fi
-
-          # 2. 清理 app-build 缓存（保留最新 2 份）
-          CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq '[.actions_caches[] | select(.key | startswith("app-build-"))] | sort_by(.created_at) | reverse | .[2:] | .[].id')
-          if [ -n "$CACHES" ]; then
-            COUNT=$(echo "$CACHES" | wc -l)
-            echo "Deleting $COUNT old app-build cache(s)..."
-            echo "$CACHES" | while read -r id; do
-              gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id || true
-            done
-          fi
-
-          # 3. 清理其他 gradle 缓存（保留最新 1 份）
-          for PREFIX in "gradle-dependencies-" "gradle-transforms-" "gradle-kotlin-dsl-" "gradle-groovy-dsl-" "gradle-wrapper-zips-" "gradle-instrumented-jars-" "gradle-generated-gradle-jars-"; do
+          # 清理 gradle 相关缓存（保留最新 1 份）
+          for PREFIX in "gradle-" "app-build-"; do
             CACHES=$(gh api repos/${{ github.repository }}/actions/caches --jq "[.actions_caches[] | select(.key | startswith(\"$PREFIX\"))] | sort_by(.created_at) | reverse | .[1:] | .[].id")
             if [ -n "$CACHES" ]; then
               COUNT=$(echo "$CACHES" | wc -l)
