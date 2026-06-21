@@ -12,6 +12,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -388,7 +389,7 @@ class BleManager @Inject constructor(
         // 设置临时特征读取标记
         pendingReadUuid = uuid
 
-        return kotlinx.coroutines.withTimeoutOrNull(READ_TIMEOUT_MS) {
+        return withTimeoutOrNull(READ_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
                 pendingReadContinuation = continuation
                 gatt.readCharacteristic(char)
@@ -415,6 +416,7 @@ class BleManager @Inject constructor(
     /**
      * 开始自动重连
      */
+    @SuppressLint("MissingPermission")
     private fun startAutoReconnect() {
         val device = lastConnectedDevice ?: return
         isAutoReconnecting = true
@@ -541,7 +543,7 @@ class BleManager @Inject constructor(
         } ?: return null
 
         // Check status byte
-        if (resp[2] == 0x01 && resp[3] == 0x04.toByte()) {
+        if (resp[2] == 0x01.toByte() && resp[3] == 0x04.toByte()) {
             Log.w(TAG, "WiFi connection failed")
             return null
         }

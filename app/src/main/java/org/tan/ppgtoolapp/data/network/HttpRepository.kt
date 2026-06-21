@@ -15,12 +15,17 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import android.util.Log
 import javax.inject.Singleton
 
 @Singleton
 class HttpRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        private const val TAG = "HttpRepository"
+    }
+
     private var api: DeviceApi? = null
     private var currentIp: String? = null
 
@@ -100,11 +105,6 @@ class HttpRepository @Inject constructor(
     suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
         try { api?.getStatus() } catch (e: Exception) { null }
     }
-
-    suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
-        try { api?.getStatus() } catch (e: Exception) { null }
-    }
-
     suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
         try {
             val requestBody = ProgressRequestBody(file, onProgress)

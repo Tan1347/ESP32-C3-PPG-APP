@@ -196,41 +196,22 @@ class MonitorViewModel @Inject constructor(
     }
 
     /**
-     * Generic BLE command query with timeout and response parsing
-     */
-    private suspend fun <T> queryBleCommand(
-        sendQuery: suspend () -> Boolean,
-        cmd: Byte,
-        timeoutMs: Long = BLE_QUERY_TIMEOUT_MS,
-        minResponseSize: Int = 5,
-        parser: (ByteArray) -> T
-    ): T? {
-        if (!bleManager.isConnected()) return null
-        if (!sendQuery()) return null
-        val resp = withTimeoutOrNull(timeoutMs) {
-            bleManager.cmdResponse.first { it.size >= minResponseSize && it[1] == cmd }
-        }
-        return resp?.let { parser(it) }
-    }
-
-    /**
      * Query SD card capacity via BLE command 0x23
      * Response frame: [0xAA][0x23][0x04][free_h][free_l][total_h][total_l][CHECKSUM]
      */
     fun querySdCardStatus() {
         viewModelScope.launch {
-            val result = queryBleCommand(
-                sendQuery = { bleManager.querySdCardStatus() },
-                cmd = 0x23.toByte(),
-                minResponseSize = SD_CARD_RESPONSE_SIZE
-            ) { resp ->
+            if (!bleManager.isConnected()) return@launch
+            if (!bleManager.querySdCardStatus()) return@launch
+            Log.d(TAG, "BLE 查询 SD 卡状态已发送")
+            val resp = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
+                bleManager.cmdResponse.first { it.size >= SD_CARD_RESPONSE_SIZE && it[1] == 0x23.toByte() }
+            }
+            if (resp != null) {
                 val freeMb = ((resp[3].toInt() and 0xFF) shl 8) or (resp[4].toInt() and 0xFF)
                 val totalMb = ((resp[5].toInt() and 0xFF) shl 8) or (resp[6].toInt() and 0xFF)
                 Log.d(TAG, "SD 卡响应: free=${freeMb}MB, total=${totalMb}MB")
-                freeMb
-            }
-            if (result != null) {
-                _deviceStatus.update { it.copy(sdFreeMb = result) }
+                _deviceStatus.update { it.copy(sdFreeMb = freeMb) }
             } else {
                 Log.w(TAG, "SD 卡查询超时")
             }
@@ -243,17 +224,16 @@ class MonitorViewModel @Inject constructor(
      */
     fun queryBatteryStatus() {
         viewModelScope.launch {
-            val result = queryBleCommand(
-                sendQuery = { bleManager.queryBatteryStatus() },
-                cmd = 0x24.toByte(),
-                minResponseSize = BATTERY_RESPONSE_SIZE
-            ) { resp ->
+            if (!bleManager.isConnected()) return@launch
+            if (!bleManager.queryBatteryStatus()) return@launch
+            Log.d(TAG, "BLE 查询电池状态已发送")
+            val resp = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
+                bleManager.cmdResponse.first { it.size >= BATTERY_RESPONSE_SIZE && it[1] == 0x24.toByte() }
+            }
+            if (resp != null) {
                 val pct = resp[3].toInt() and 0xFF
                 Log.d(TAG, "电池响应: ${pct}%")
-                pct
-            }
-            if (result != null) {
-                _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = result)) }
+                _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = pct)) }
             } else {
                 Log.w(TAG, "电池查询超时")
             }
