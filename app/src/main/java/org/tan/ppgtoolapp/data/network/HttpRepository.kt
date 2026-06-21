@@ -26,20 +26,21 @@ class HttpRepository @Inject constructor(
         private const val TAG = "HttpRepository"
     }
 
-    private var api: DeviceApi? = null
-    private var currentIp: String? = null
+    @Volatile private var api: DeviceApi? = null
+    @Volatile private var currentIp: String? = null
+
+    // Shared OkHttpClient (connection pool, thread pool reused)
+    private val sharedClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     fun setDeviceIp(ip: String) {
         currentIp = ip
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-
         api = Retrofit.Builder()
             .baseUrl("http://$ip/")
-            .client(client)
+            .client(sharedClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(DeviceApi::class.java)
@@ -95,7 +96,7 @@ class HttpRepository @Inject constructor(
                 Log.e(TAG, "CRC32 mismatch: server=$serverCrc local=$localCrc")
             }
 
-            DownloadResult(file = file, md5Match = crcMatch, serverMd5 = serverCrc, localMd5 = localCrc)
+            DownloadResult(file = file, crcMatch = crcMatch, serverCrc = serverCrc, localCrc = localCrc)
         } catch (e: Exception) {
             Log.e(TAG, "Download error: ${e.message}")
             null

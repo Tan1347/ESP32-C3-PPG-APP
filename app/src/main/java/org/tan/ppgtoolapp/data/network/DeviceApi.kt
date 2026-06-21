@@ -69,7 +69,7 @@ data class LogListResponse(
 
 data class DownloadResult(
     val file: java.io.File,
-    val md5Match: Boolean,
-    val serverMd5: String?,
-    val localMd5: String
+    val crcMatch: Boolean,
+    val serverCrc: String?,
+    val localCrc: String
 )

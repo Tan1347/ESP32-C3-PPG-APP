@@ -97,8 +97,8 @@ class DataViewModel @Inject constructor(
                 }
 
                 if (result != null) {
-                    if (!result.md5Match) {
-                        Log.w(TAG, "MD5 mismatch for $fileName: server=${result.serverMd5} local=${result.localMd5}")
+                    if (!result.crcMatch) {
+                        Log.w(TAG, "MD5 mismatch for $fileName: server=${result.serverCrc} local=${result.localCrc}")
                         _state.update { it.copy(error = "File integrity check failed: $fileName") }
                         result.file.delete()
                         NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "MD5 mismatch")
@@ -175,7 +175,7 @@ class DataViewModel @Inject constructor(
                         _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
                     }
                     if (result != null) {
-                        if (!result.md5Match) {
+                        if (!result.crcMatch) {
                             Log.w(TAG, "Batch MD5 mismatch: $fileName")
                             result.file.delete()
                             continue

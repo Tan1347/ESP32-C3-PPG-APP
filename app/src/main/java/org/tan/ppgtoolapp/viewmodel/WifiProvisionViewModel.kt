@@ -103,6 +103,30 @@ class WifiProvisionViewModel @Inject constructor(
         _state.update { it.copy(selectedNetwork = null, password = "") }
     }
 
+    /**
+     * Build BLE command frame for WiFi credentials
+     * Format: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd...]
+     * Note: Frame checksum is added by BleManager.buildFrame()
+     */
+    private fun buildWifiCommand(ssid: String, password: String): ByteArray {
+        val ssidBytes = ssid.toByteArray(StandardCharsets.UTF_8)
+        val pwdBytes = password.toByteArray(StandardCharsets.UTF_8)
+        val command = ByteArray(1 + 2 + ssidBytes.size + 2 + pwdBytes.size)
+        var offset = 0
+
+        command[offset++] = PpgGattProfile.CMD_WIFI_ADD
+        command[offset++] = (ssidBytes.size shr 8).toByte()
+        command[offset++] = (ssidBytes.size and 0xFF).toByte()
+        ssidBytes.copyInto(command, offset)
+        offset += ssidBytes.size
+        command[offset++] = (pwdBytes.size shr 8).toByte()
+        command[offset++] = (pwdBytes.size and 0xFF).toByte()
+        pwdBytes.copyInto(command, offset)
+
+        Log.i(TAG, "WiFi CMD: SSID=\"$ssid\" pwd_len=${password.length} frame=${command.size}B")
+        return command
+    }
+
     fun sendWifiCredentials() {
         val network = _state.value.selectedNetwork ?: return
         val password = _state.value.password
@@ -111,55 +135,7 @@ class WifiProvisionViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // 构造 WiFi 凭据命令
-                // 格式: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd...][checksum]
-                val ssidBytes = network.ssid.toByteArray(StandardCharsets.UTF_8)
-                val pwdBytes = password.toByteArray(StandardCharsets.UTF_8)
-
-                // 计算帧长度：命令(1) + SSID长度(2) + SSID + 密码长度(2) + 密码 + 校验码(1)
-                val frameLength = 1 + 2 + ssidBytes.size + 2 + pwdBytes.size + 1
-                val command = ByteArray(frameLength)
-                var offset = 0
-
-                // 命令 ID
-                command[offset++] = PpgGattProfile.CMD_WIFI_ADD
-
-                // SSID 长度 (big-endian)
-                command[offset++] = (ssidBytes.size shr 8).toByte()
-                command[offset++] = (ssidBytes.size and 0xFF).toByte()
-
-                // SSID
-                ssidBytes.copyInto(command, offset)
-                offset += ssidBytes.size
-
-                // 密码长度 (big-endian)
-                command[offset++] = (pwdBytes.size shr 8).toByte()
-                command[offset++] = (pwdBytes.size and 0xFF).toByte()
-
-                // 密码
-                pwdBytes.copyInto(command, offset)
-                offset += pwdBytes.size
-
-                // Note: Frame checksum is handled by BleManager.buildFrame() using SUM
-
-                // ====== BLE frame debug log ======
-                Log.i(TAG, "========================================")
-                Log.i(TAG, "BLE WiFi Credential Frame")
-                Log.i(TAG, "========================================")
-                Log.i(TAG, "SSID: \"${network.ssid}\"")
-                Log.i(TAG, "Password: \"${password}\"")
-                Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "Frame structure:")
-                Log.i(TAG, "  CMD:        0x%02X (CMD_WIFI_ADD)".format(command[0]))
-                Log.i(TAG, "  SSID_LEN:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
-                Log.i(TAG, "  SSID_DATA:  ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"${network.ssid}\")")
-                val pwdLenOffset = 3 + ssidBytes.size
-                Log.i(TAG, "  PWD_LEN:    ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
-                Log.i(TAG, "  PWD_DATA:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "Raw data(${command.size} bytes): ${command.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "========================================")
-
+                val command = buildWifiCommand(network.ssid, password)
                 val success = bleManager.writeCommand(command)
 
                 Log.i(TAG, "BLE 写入结果: $success")
@@ -257,53 +233,8 @@ class WifiProvisionViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // 构造 WiFi 凭据命令
-                val ssidBytes = ssid.toByteArray(StandardCharsets.UTF_8)
-                val pwdBytes = password.toByteArray(StandardCharsets.UTF_8)
-
-                // 计算帧长度：命令(1) + SSID长度(2) + SSID + 密码长度(2) + 密码 + 校验码(1)
-                val frameLength = 1 + 2 + ssidBytes.size + 2 + pwdBytes.size + 1
-                val command = ByteArray(frameLength)
-                var offset = 0
-
-                // 命令 ID
-                command[offset++] = PpgGattProfile.CMD_WIFI_ADD
-
-                // SSID 长度 (big-endian)
-                command[offset++] = (ssidBytes.size shr 8).toByte()
-                command[offset++] = (ssidBytes.size and 0xFF).toByte()
-
-                // SSID
-                ssidBytes.copyInto(command, offset)
-                offset += ssidBytes.size
-
-                // 密码长度 (big-endian)
-                command[offset++] = (pwdBytes.size shr 8).toByte()
-                command[offset++] = (pwdBytes.size and 0xFF).toByte()
-
-                // 密码
-                pwdBytes.copyInto(command, offset)
-                offset += pwdBytes.size
-
-                // Note: Frame checksum is handled by BleManager.buildFrame() using SUM
-
-                // ====== BLE frame debug log ======
-                Log.i(TAG, "========================================")
-                Log.i(TAG, "BLE WiFi Credential Frame (Manual)")
-                Log.i(TAG, "========================================")
-                Log.i(TAG, "SSID: \"$ssid\"")
-                Log.i(TAG, "Password: \"$password\"")
-                Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "Frame structure:")
-                Log.i(TAG, "  CMD:        0x%02X (CMD_WIFI_ADD)".format(command[0]))
-                Log.i(TAG, "  SSID_LEN:   ${ssidBytes.size} (0x%02X 0x%02X)".format(command[1], command[2]))
-                Log.i(TAG, "  SSID_DATA:  ${ssidBytes.joinToString(" ") { "%02X".format(it) }} (\"$ssid\")")
-                val pwdLenOffset = 3 + ssidBytes.size
-                Log.i(TAG, "  PWD_LEN:    ${pwdBytes.size} (0x%02X 0x%02X)".format(command[pwdLenOffset], command[pwdLenOffset + 1]))
-                Log.i(TAG, "  PWD_DATA:   ${pwdBytes.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "----------------------------------------")
-                Log.i(TAG, "Raw data(${command.size} bytes): ${command.joinToString(" ") { "%02X".format(it) }}")
-                Log.i(TAG, "========================================")
+                val command = buildWifiCommand(ssid, password)
+                val success = bleManager.writeCommand(command)
 
                 val success = bleManager.writeCommand(command)
 

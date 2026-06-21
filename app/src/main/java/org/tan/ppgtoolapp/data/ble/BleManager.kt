@@ -59,10 +59,10 @@ class BleManager @Inject constructor(
     private val _cmdResponse = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
     val cmdResponse: SharedFlow<ByteArray> = _cmdResponse.asSharedFlow()
 
-    // 用于 readCharacteristic 的异步等待
-    @Volatile
-    private var pendingReadUuid: UUID? = null
-    private var pendingReadContinuation: kotlin.coroutines.Continuation<ByteArray?>? = null
+    // 用于 readCharacteristic 的异步等待（使用同步锁保证线程安全）
+    private val pendingReadLock = Any()
+    @Volatile private var pendingReadUuid: UUID? = null
+    @Volatile private var pendingReadContinuation: kotlin.coroutines.Continuation<ByteArray?>? = null
 
     // 扫描相关
     private var currentScanner: BluetoothLeScanner? = null
@@ -296,15 +296,17 @@ class BleManager @Inject constructor(
                     }
 
                     // 处理 readCharacteristic 的异步结果
-                    if (uuid == pendingReadUuid) {
-                        val result = if (status == BluetoothGatt.GATT_SUCCESS) {
-                            value?.also { data ->
-                                Log.d(TAG, "Read $uuid: ${data.joinToString(" ") { "%02X".format(it) }}")
-                            }
-                        } else null
-                        pendingReadContinuation?.resume(result)
-                        pendingReadContinuation = null
-                        pendingReadUuid = null
+                    synchronized(pendingReadLock) {
+                        if (uuid == pendingReadUuid) {
+                            val result = if (status == BluetoothGatt.GATT_SUCCESS) {
+                                value?.also { data ->
+                                    Log.d(TAG, "Read $uuid: ${data.joinToString(" ") { "%02X".format(it) }}")
+                                }
+                            } else null
+                            pendingReadContinuation?.resume(result)
+                            pendingReadContinuation = null
+                            pendingReadUuid = null
+                        }
                     }
                 }
             }
@@ -386,12 +388,16 @@ class BleManager @Inject constructor(
         val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return null
         val char = service.getCharacteristic(uuid) ?: return null
 
-        // 设置临时特征读取标记
-        pendingReadUuid = uuid
+        // 设置临时特征读取标记（线程安全）
+        synchronized(pendingReadLock) {
+            pendingReadUuid = uuid
+        }
 
         return withTimeoutOrNull(READ_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
-                pendingReadContinuation = continuation
+                synchronized(pendingReadLock) {
+                    pendingReadContinuation = continuation
+                }
                 gatt.readCharacteristic(char)
 
                 // 超时处理
