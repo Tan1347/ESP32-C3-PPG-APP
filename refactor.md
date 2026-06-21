@@ -203,7 +203,7 @@ fun queryBatteryStatus() {
 
 ---
 
-### 6. 重复的 HTTP 请求模式
+### 6. ✅ 重复的 HTTP 请求模式 — 已完成
 
 - **文件**: `OtaViewModel.kt` 第 199-243 行
 - **问题**: 两个 for 循环结构几乎相同，只差 URL 后缀和解析函数
@@ -258,7 +258,7 @@ suspend fun fetchReleases(): List<ReleaseInfo> {
 
 ---
 
-### 7. 重复的 7z 解压模式
+### 7. ✅ 重复的 7z 解压模式 — 已完成
 
 - **文件**: `OtaViewModel.kt` 第 288-365 行 (`downloadAndExtract()`)、第 367-438 行 (`selectLocalFile()`)
 - **问题**: 两处共享相同的 7z 解压 + 状态更新模式
@@ -408,7 +408,7 @@ override fun onCleared() {
 
 ---
 
-### 11. `OtaState` 数据类 14 个字段
+### 11. ✅ `OtaState` 数据类 14 个字段 — 已完成
 
 - **文件**: `OtaViewModel.kt` 第 25-41 行
 - **问题**: 字段过多，暗示类承担过多 UI 状态
@@ -474,15 +474,19 @@ data class DialogState(
 
 ## 重构优先级
 
-| 优先级 | 问题 | 预估工作量 | 收益 |
-|--------|------|-----------|------|
-| P0 | BleManager 拆分 | 4h | SRP 原则，可维护性大幅提升 |
-| P0 | connect() 回调提取 | 1h | 消除嵌套，可测试性提升 |
-| P1 | enableNotifications helper | 15min | 消除重复 |
-| P1 | BLE 查询通用函数 | 30min | 消除重复 |
-| P1 | HTTP 请求 helper | 30min | 消除重复 |
-| P1 | 7z 解压 helper | 20min | 消除重复 |
-| P2 | fetchDeviceStatus 卫语句 | 15min | 可读性提升 |
-| P2 | 魔法数字提取 | 30min | 可读性提升 |
-| P3 | 删除空 onCleared | 1min | 清理 |
-| P3 | OtaState 拆分 | 30min | 可维护性 |
+| 优先级 | 问题 | 状态 |
+|--------|------|------|
+| P0 | BleManager 拆分 (495行) | ⬜ 待做（大规模重构，建议功能稳定后执行） |
+| P0 | connect() 回调提取 (122行) | ⬜ 待做（与 BleManager 拆分联动） |
+| P0 | 重复 BluetoothGattCallback | ⬜ 待做（与 connect 回调提取联动） |
+| P1 | enableNotifications helper | ✅ 已完成 |
+| P1 | BLE 查询通用函数 | ✅ 已完成 |
+| P1 | HTTP 请求 helper | ✅ 已完成 |
+| P1 | 7z 解压 helper | ✅ 已完成 |
+| P2 | fetchDeviceStatus 卫语句 | ✅ 已完成 |
+| P2 | 魔法数字提取 | ✅ 已完成 |
+| P3 | 删除空 onCleared | ✅ 已完成 |
+| P3 | OtaState 拆分 | ✅ 已完成 |
+| P3 | OtaViewModel 拆分 (507行) | ⬜ 待做（建议与 BleManager 拆分一起做） |
+
+**已完成 8/12 项 ✅** | **待做 3 项（均为大规模类拆分，建议功能稳定后执行）**

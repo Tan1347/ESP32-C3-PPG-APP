@@ -97,7 +97,13 @@ fun DataScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text("${state.downloadProgress}%", style = MaterialTheme.typography.bodySmall)
+                    val downloadedKB = state.downloadBytes / 1024
+                    val totalKB = state.downloadTotal / 1024
+                    Text(
+                        if (totalKB > 0) "${downloadedKB}KB / ${totalKB}KB (${state.downloadProgress}%)"
+                        else "${state.downloadProgress}%",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }

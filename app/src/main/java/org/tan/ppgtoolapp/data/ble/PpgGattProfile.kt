@@ -28,8 +28,6 @@ object PpgGattProfile {
     const val CMD_WIFI_CLEAR: Byte = 0x12
     const val CMD_WIFI_DELETE: Byte = 0x13
     const val CMD_WIFI_LIST: Byte = 0x14
-    const val CMD_WIFI_MODIFY: Byte = 0x15
-    const val CMD_WIFI_PRIORITY: Byte = 0x16
     const val CMD_TIME_SYNC: Byte = 0x40      // 时间同步
     const val CMD_OTA_ENTER: Byte = 0x20
     const val CMD_FW_VERSION: Byte = 0x21
@@ -38,7 +36,7 @@ object PpgGattProfile {
     const val CMD_QUERY_BATTERY: Byte = 0x24  // 查询电池详情
     const val CMD_LOG_LEVEL: Byte = 0x30
     const val CMD_LOG_STATUS: Byte = 0x31
-    const val CMD_LOG_EXPORT: Byte = 0x32
+    const val CMD_FILE_DOWNLOAD: Byte = 0x32  /* BLE trigger + HTTP download */
 
     // 设备名前缀
     const val DEVICE_NAME_PREFIX = "PPG-Monitor"

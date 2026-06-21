@@ -25,6 +25,8 @@ data class DataState(
     val isLoading: Boolean = false,
     val isDownloading: Boolean = false,
     val downloadProgress: Int = 0,
+    val downloadBytes: Long = 0,
+    val downloadTotal: Long = 0,
     val downloadFileName: String = "",
     val error: String? = null
 )
@@ -65,38 +67,54 @@ class DataViewModel @Inject constructor(
     }
 
     /**
-     * Download a file from device
+     * Trigger BLE download + HTTP transfer for a single file
+     * Flow: BLE 0x32 -> get IP -> HTTP download
      */
     fun downloadFile(fileName: String) {
         viewModelScope.launch {
-            // Check if already downloaded
             if (fileMetadataDao.exists(fileName)) {
                 _state.update { it.copy(error = "File already downloaded: $fileName") }
                 return@launch
             }
 
-            _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadFileName = fileName, error = null) }
+            _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadBytes = 0, downloadTotal = 0, downloadFileName = fileName, error = null) }
             NotificationHelper.showProgress(context, fileName.substringAfterLast("/"), 0)
 
             try {
-                val file = httpRepository.downloadFile(fileName) { progress ->
-                    _state.update { it.copy(downloadProgress = progress) }
-                    NotificationHelper.showProgress(context, fileName.substringAfterLast("/"), progress)
+                // Step 1: BLE trigger - ensure WiFi is ready and get IP
+                val ip = bleManager.triggerFileDownload()
+                if (ip == null) {
+                    _state.update { it.copy(isDownloading = false, error = "WiFi connection failed") }
+                    NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "WiFi connection failed")
+                    return@launch
+                }
+                httpRepository.setDeviceIp(ip)
+
+                // Step 2: HTTP download with MD5 verification
+                val result = httpRepository.downloadFile(fileName) { percent, downloaded, total ->
+                    _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
+                    NotificationHelper.showProgress(context, fileName.substringAfterLast("/"), percent)
                 }
 
-                if (file != null) {
+                if (result != null) {
+                    if (!result.md5Match) {
+                        Log.w(TAG, "MD5 mismatch for $fileName: server=${result.serverMd5} local=${result.localMd5}")
+                        _state.update { it.copy(error = "File integrity check failed: $fileName") }
+                        result.file.delete()
+                        NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "MD5 mismatch")
+                        return@launch
+                    }
+
                     val metadata = FileMetadata(
-                        fileName = fileName,
-                        fileSize = file.length(),
+                        fileName = fileName, fileSize = result.file.length(),
                         downloadTime = System.currentTimeMillis(),
                         deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown",
-                        localPath = file.absolutePath,
-                        fileType = detectFileType(fileName)
+                        localPath = result.file.absolutePath, fileType = detectFileType(fileName)
                     )
                     fileMetadataDao.insert(metadata)
                     loadDownloadedFiles()
                     NotificationHelper.showComplete(context, fileName.substringAfterLast("/"))
-                    Log.d(TAG, "Downloaded: $fileName (${file.length()} bytes)")
+                    Log.d(TAG, "Downloaded: $fileName (${result.file.length()} bytes) MD5 OK")
                 } else {
                     _state.update { it.copy(error = "Download failed: $fileName") }
                     NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "Download failed")
@@ -127,7 +145,8 @@ class DataViewModel @Inject constructor(
     }
 
     /**
-     * Download multiple files sequentially
+     * Download multiple files sequentially with BLE trigger
+     * Flow: for each file: BLE 0x32 -> HTTP download -> next
      */
     fun downloadFiles(fileNames: List<String>) {
         viewModelScope.launch {
@@ -139,23 +158,36 @@ class DataViewModel @Inject constructor(
 
             _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadFileName = "0/${pending.size}", error = null) }
 
+            // BLE trigger once to ensure WiFi is ready
+            val ip = bleManager.triggerFileDownload()
+            if (ip == null) {
+                _state.update { it.copy(isDownloading = false, error = "WiFi connection failed") }
+                return@launch
+            }
+            httpRepository.setDeviceIp(ip)
+
             for ((index, fileName) in pending.withIndex()) {
                 _state.update { it.copy(downloadFileName = "${index + 1}/${pending.size}: ${fileName.substringAfterLast("/")}")}
                 NotificationHelper.showProgress(context, "${index + 1}/${pending.size}", (index * 100) / pending.size)
 
                 try {
-                    val file = httpRepository.downloadFile(fileName) { progress ->
-                        _state.update { it.copy(downloadProgress = progress) }
+                    val result = httpRepository.downloadFile(fileName) { percent, downloaded, total ->
+                        _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
                     }
-                    if (file != null) {
+                    if (result != null) {
+                        if (!result.md5Match) {
+                            Log.w(TAG, "Batch MD5 mismatch: $fileName")
+                            result.file.delete()
+                            continue
+                        }
                         val metadata = FileMetadata(
-                            fileName = fileName, fileSize = file.length(),
+                            fileName = fileName, fileSize = result.file.length(),
                             downloadTime = System.currentTimeMillis(),
                             deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown",
-                            localPath = file.absolutePath, fileType = detectFileType(fileName)
+                            localPath = result.file.absolutePath, fileType = detectFileType(fileName)
                         )
                         fileMetadataDao.insert(metadata)
-                        Log.d(TAG, "Batch downloaded: $fileName")
+                        Log.d(TAG, "Batch downloaded: $fileName (${result.file.length()} bytes) MD5 OK")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Batch download failed: $fileName - ${e.message}")

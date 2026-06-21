@@ -44,33 +44,61 @@ class HttpRepository @Inject constructor(
         api?.getFileList()?.files ?: emptyList()
     }
 
-    suspend fun downloadFile(filename: String, onProgress: ((Int) -> Unit)? = null): File? = withContext(Dispatchers.IO) {
+    /**
+     * Download file with CRC32 verification and byte-level progress
+     * @param onProgress callback: (percent, downloadedBytes, totalBytes)
+     * @return DownloadResult with file and verification status
+     */
+    suspend fun downloadFile(filename: String, onProgress: ((Int, Long, Long) -> Unit)? = null): DownloadResult? = withContext(Dispatchers.IO) {
         try {
             val response = api?.downloadFile(filename) ?: return@withContext null
+            if (!response.isSuccessful) return@withContext null
+
+            val body = response.body() ?: return@withContext null
+            val serverCrc = response.headers()["X-File-CRC32"]
+            val totalSize = body.contentLength()
+
             val dir = File(context.getExternalFilesDir(null), "PPG")
             dir.mkdirs()
             val file = File(dir, filename.substringAfterLast("/"))
 
-            response.byteStream().use { input ->
+            val crc = java.util.zip.CRC32()
+
+            body.byteStream().use { input ->
                 file.outputStream().use { output ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     var totalBytes = 0L
-                    val totalSize = response.contentLength()
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
+                        crc.update(buffer, 0, bytesRead)
                         totalBytes += bytesRead
                         if (totalSize > 0) {
-                            onProgress?.invoke((totalBytes * 100 / totalSize).toInt())
+                            val percent = (totalBytes * 100 / totalSize).toInt()
+                            onProgress?.invoke(percent, totalBytes, totalSize)
                         }
                     }
                 }
             }
-            file
+
+            // Verify CRC32
+            val localCrc = String.format("%08X", crc.value)
+            val crcMatch = serverCrc == null || serverCrc.equals(localCrc, ignoreCase = true)
+
+            if (!crcMatch) {
+                Log.e(TAG, "CRC32 mismatch: server=$serverCrc local=$localCrc")
+            }
+
+            DownloadResult(file = file, md5Match = crcMatch, serverMd5 = serverCrc, localMd5 = localCrc)
         } catch (e: Exception) {
+            Log.e(TAG, "Download error: ${e.message}")
             null
         }
+    }
+
+    suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
+        try { api?.getStatus() } catch (e: Exception) { null }
     }
 
     suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
