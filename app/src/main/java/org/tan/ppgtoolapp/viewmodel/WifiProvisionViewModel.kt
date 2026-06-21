@@ -104,8 +104,8 @@ class WifiProvisionViewModel @Inject constructor(
     }
 
     /**
-     * Build BLE command frame for WiFi credentials
-     * Format: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd...]
+     * Build BLE command frame for Wi-Fi credentials
+     * Format: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd]
      * Note: Frame checksum is added by BleManager.buildFrame()
      */
     private fun buildWifiCommand(ssid: String, password: String): ByteArray {
@@ -234,8 +234,6 @@ class WifiProvisionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val command = buildWifiCommand(ssid, password)
-                val success = bleManager.writeCommand(command)
-
                 val success = bleManager.writeCommand(command)
 
                 Log.i(TAG, "BLE 写入结果: $success")
