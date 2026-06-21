@@ -525,4 +525,33 @@ class BleManager @Inject constructor(
         Log.d(TAG, "查询电池状态: CMD=0x%02X".format(PpgGattProfile.CMD_QUERY_BATTERY))
         return writeCommand(byteArrayOf(PpgGattProfile.CMD_QUERY_BATTERY))
     }
+
+    /**
+     * Trigger file download via BLE command 0x32
+     * Firmware ensures WiFi is started and returns IP address
+     * Response frame: [0xAA][0x32][LEN][IP_LEN][IP_STR...][CHECKSUM]
+     * @return IP address string, or null if failed
+     */
+    suspend fun triggerFileDownload(): String? {
+        Log.d(TAG, "触发文件下载: CMD=0x%02X".format(PpgGattProfile.CMD_FILE_DOWNLOAD))
+        if (!writeCommand(byteArrayOf(PpgGattProfile.CMD_FILE_DOWNLOAD))) return null
+
+        val resp = withTimeoutOrNull(30000L) {  // 30s timeout for WiFi connection
+            cmdResponse.first { it.size >= 5 && it[1] == PpgGattProfile.CMD_FILE_DOWNLOAD }
+        } ?: return null
+
+        // Check status byte
+        if (resp[2] == 0x01 && resp[3] == 0x04.toByte()) {
+            Log.w(TAG, "WiFi connection failed")
+            return null
+        }
+
+        // Parse IP: [0xAA][0x32][LEN][IP_LEN][IP_STR...][CHECKSUM]
+        if (resp.size < 6) return null
+        val ipLen = resp[3].toInt() and 0xFF
+        if (resp.size < 4 + ipLen) return null
+        val ip = String(resp, 4, ipLen, Charsets.UTF_8)
+        Log.d(TAG, "设备 IP: $ip")
+        return ip
+    }
 }

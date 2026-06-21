@@ -2,6 +2,7 @@ package org.tan.ppgtoolapp.data.network
 
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.*
 
 /**
@@ -13,8 +14,9 @@ interface DeviceApi {
     @GET("/api/files")
     suspend fun getFileList(): FileListResponse
 
+    @Streaming
     @GET("/api/download")
-    suspend fun downloadFile(@Query("file") filename: String): ResponseBody
+    suspend fun downloadFile(@Query("file") filename: String): Response<ResponseBody>
 
     @GET("/api/status")
     suspend fun getStatus(): DeviceStatusResponse
@@ -50,4 +52,11 @@ data class BatteryInfo(
 
 data class LogListResponse(
     val logs: List<String>
+)
+
+data class DownloadResult(
+    val file: java.io.File,
+    val md5Match: Boolean,
+    val serverMd5: String?,
+    val localMd5: String
 )

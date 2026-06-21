@@ -19,6 +19,7 @@ import androidx.navigation.NavController
 import org.tan.ppgtoolapp.data.network.ReleaseInfo
 import org.tan.ppgtoolapp.viewmodel.OtaResult
 import org.tan.ppgtoolapp.viewmodel.OtaViewModel
+import org.tan.ppgtoolapp.viewmodel.OperationState
 
 @Composable
 private fun RepoSettingsDialog(
@@ -187,7 +188,7 @@ fun OtaScreen(
         OutlinedCard(
             modifier = Modifier.fillMaxWidth(),
             onClick = { viewModel.loadReleases() },
-            enabled = !state.isDownloading && !state.isExtracting && !state.isUploading
+            enabled = state.operation is OperationState.Idle
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -213,7 +214,7 @@ fun OtaScreen(
         OutlinedCard(
             modifier = Modifier.fillMaxWidth(),
             onClick = { filePickerLauncher.launch("*/*") },
-            enabled = !state.isDownloading && !state.isExtracting && !state.isUploading
+            enabled = state.operation is OperationState.Idle
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -233,15 +234,25 @@ fun OtaScreen(
         }
 
         // 下载/解压进度
-        if (state.isDownloading || state.isExtracting) {
+        val op = state.operation
+        if (op is OperationState.Downloading || op is OperationState.Extracting) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    val progress = when (op) {
+                        is OperationState.Downloading -> op.progress / 100f
+                        else -> 0f
+                    }
                     LinearProgressIndicator(
-                        progress = { state.progress / 100f },
+                        progress = { progress },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text(state.progressText, style = MaterialTheme.typography.bodySmall)
+                    val text = when (op) {
+                        is OperationState.Downloading -> op.text
+                        is OperationState.Extracting -> op.text
+                        else -> ""
+                    }
+                    Text(text, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -269,17 +280,17 @@ fun OtaScreen(
         }
 
         // 上传进度
-        if (state.isUploading) {
+        if (op is OperationState.Uploading) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("正在上传固件...", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { state.progress / 100f },
+                        progress = { op.progress / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(state.progressText, style = MaterialTheme.typography.bodySmall)
+                    Text(op.text, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -288,7 +299,7 @@ fun OtaScreen(
         Button(
             onClick = { viewModel.startOta() },
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.firmwareFile != null && !state.isUploading && !state.isDownloading && !state.isExtracting
+            enabled = state.firmwareFile != null && state.operation is OperationState.Idle
         ) {
             Icon(Icons.Filled.SystemUpdate, contentDescription = null)
             Spacer(Modifier.width(8.dp))

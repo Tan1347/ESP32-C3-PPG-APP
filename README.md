@@ -1,5 +1,7 @@
 # PPG Monitor Android App
 
+[中文](README_CN.md) | English
+
 ESP32-C3 PPG companion Android application for real-time monitoring, data management, and device configuration.
 
 > **This document also serves as firmware development reference**, containing complete BLE protocol, data formats, and communication specifications.
@@ -11,7 +13,7 @@ ESP32-C3 PPG companion Android application for real-time monitoring, data manage
 - **Real-time Monitoring**: PPG waveform display, heart rate/SpO2/perfusion index real-time data
 - **Device Status**: Battery percentage, firmware version, SD card free space
 - **Data Management**: Download collection data from TF card via WiFi HTTP, Room database for file tracking
-- **Offline Analysis**: Parse binary PPG records, calculate HR/SpO2 statistics, detect SpO2 desaturation events
+- **Offline Analysis**: Parse binary PPG records, calculate HR/SpO2 statistics (avg/min/max/stddev), detect SpO2 desaturation events (SpO2 < 90% for > 10 seconds)
 - **Batch Download**: Download all files from device with progress notification
 - **Export & Share**: Export analysis results as CSV or PDF, share via Android Share Sheet
 
@@ -138,8 +140,6 @@ Status codes: 0=OK, 1=cancelled, 2=checksum error, 3=unknown command, 4=low batt
 | Clear WiFi | `[0x12]` | Clear all saved WiFi |
 | Delete WiFi | `[0x13] + index` | Delete WiFi by index |
 | WiFi list | `[0x14]` | Get saved WiFi list |
-| Modify WiFi | `[0x15] + data` | Modify saved WiFi |
-| WiFi priority | `[0x16] + data` | Set WiFi connection priority |
 
 **Add WiFi command format (0x10)**:
 
@@ -272,6 +272,7 @@ Complete frame: 40 66 72 8C 00 A4
 |---------|-------|-------------|
 | Log level | `[0x30] + level` | Set log level |
 | Log status | `[0x31]` | Query log status |
+| File download | `[0x32]` | BLE trigger WiFi, return device IP for HTTP download |
 
 #### 4.7 Standalone Mode
 
@@ -487,6 +488,36 @@ App Launch
 | Android 14 (API 34) | Foreground service type declaration (`foregroundServiceType`) |
 | Android 15 (API 35) | Edge-to-edge enforcement, predictive back gestures |
 
+## BLE Communication Timing
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Query timeout | 2000ms | App waits max 2s for command response |
+| Response delay | 500ms | App delays before reading Status characteristic |
+| Read timeout | 5000ms | Characteristic read timeout |
+| Auto-reconnect delay | 3000ms | Wait before reconnect attempt |
+| Waveform buffer | 300 samples | ~3 seconds at 100Hz sampling rate |
+
+## On-Disk Binary Format (TF Card)
+
+PPG result files stored on TF card use binary format (not CSV):
+
+```
+14 bytes per record:
+  timestamp(4) + heart_rate(2) + spo2(2) + hr_valid(1) + spo2_valid(1) + reserved(3) + checksum(1)
+
+Byte order: little-endian
+Checksum: XOR of first 13 bytes
+```
+
+**TF Card Directory Structure**:
+```
+/raw/xxx.bin      - PPG raw data (red + ir)
+/csv/xxx.csv      - PPG algorithm results (HR/SpO2)
+/env/xxx.bin      - DHT11 temperature/humidity
+/log/xxx.log      - Runtime logs
+```
+
 ## Security
 
 - **TLS Certificate Verification**: System default TrustManager + hostname verification
@@ -542,7 +573,7 @@ ESP32-C3-PPG-APP/
     │   │   ├── FileMetadataDao.kt   # File metadata DAO
     │   │   ├── PpgRecord.kt         # PPG data record model
     │   │   ├── CsvParser.kt         # Binary PPG file parser
-    │   │   └── PpgAnalyzer.kt       # Statistical analysis (HR/SpO2/HRV)
+    │   │   └── PpgAnalyzer.kt       # Statistical analysis (HR/SpO2 + SpO2 events)
     │   └── wifi/
     │       └── WifiScanner.kt       # WiFi scanner
     ├── util/
