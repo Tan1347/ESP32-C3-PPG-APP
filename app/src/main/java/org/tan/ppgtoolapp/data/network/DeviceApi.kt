@@ -33,7 +33,20 @@ interface DeviceApi {
 
     @POST("/api/shutdown")
     suspend fun shutdown(): ResponseBody
+
+    @GET("/api/ota/info")
+    suspend fun getOtaInfo(): OtaInfoResponse
 }
+
+data class OtaInfoResponse(
+    val current_version: String = "",
+    val build_time: String = "",
+    val current_size: Long = 0,
+    val partition_label: String = "",
+    val partition_offset: String = "",
+    val partition_size: Long = 0,
+    val next_partition: String = ""
+)
 
 data class FileListResponse(
     val files: List<String>

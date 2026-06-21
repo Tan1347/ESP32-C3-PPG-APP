@@ -115,6 +115,10 @@ class HttpRepository @Inject constructor(
         }
     }
 
+    suspend fun getOtaInfo(): OtaInfoResponse? = withContext(Dispatchers.IO) {
+        try { api?.getOtaInfo() } catch (e: Exception) { null }
+    }
+
     suspend fun shutdown(): Boolean = withContext(Dispatchers.IO) {
         try { api?.shutdown(); true } catch (e: Exception) { false }
     }

@@ -152,6 +152,18 @@ fun OtaScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("当前固件版本", style = MaterialTheme.typography.bodySmall)
                     Text(state.deviceVersion, style = MaterialTheme.typography.headlineMedium)
+                    val otaInfo = state.otaInfo
+                    if (otaInfo != null) {
+                        if (otaInfo.buildTime.isNotEmpty()) {
+                            Text("编译: ${otaInfo.buildTime}", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (otaInfo.currentSize > 0) {
+                            Text("固件: ${otaInfo.currentSize / 1024}KB / 分区: ${otaInfo.partitionSize / 1024}KB",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
                 Icon(Icons.Filled.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -272,8 +284,29 @@ fun OtaScreen(
                     Column {
                         Text("固件已就绪", style = MaterialTheme.typography.titleSmall)
                         Text(state.selectedFileName ?: "", style = MaterialTheme.typography.bodySmall)
-                        val sizeMB = state.firmwareFile!!.length() / 1024.0 / 1024.0
-                        Text(String.format("大小: %.2f MB", sizeMB), style = MaterialTheme.typography.bodySmall)
+                        val firmwareSize = state.firmwareFile!!.length()
+                        val sizeKB = firmwareSize / 1024
+                        Text("新固件大小: ${sizeKB}KB", style = MaterialTheme.colorScheme.onSurfaceVariant.let {
+                            MaterialTheme.typography.bodySmall
+                        })
+                        // Show partition fit info
+                        val otaInfo = state.otaInfo
+                        if (otaInfo != null && otaInfo.partitionSize > 0) {
+                            val fitPercent = (firmwareSize * 100 / otaInfo.partitionSize).toInt()
+                            val color = if (firmwareSize > otaInfo.partitionSize)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            Text(
+                                "分区使用: ${fitPercent}% (${otaInfo.partitionSize / 1024}KB)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = color
+                            )
+                            if (firmwareSize > otaInfo.partitionSize) {
+                                Text("⚠ 固件超过分区大小!", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
             }

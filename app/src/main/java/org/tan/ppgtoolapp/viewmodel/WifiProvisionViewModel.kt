@@ -3,8 +3,11 @@ package org.tan.ppgtoolapp.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import org.tan.ppgtoolapp.data.ble.BleManager
 import org.tan.ppgtoolapp.data.ble.PpgGattProfile
+import org.tan.ppgtoolapp.data.network.HttpRepository
 import org.tan.ppgtoolapp.data.wifi.WifiNetwork
 import org.tan.ppgtoolapp.data.wifi.WifiScanner
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,7 +40,8 @@ sealed class ConnectionResult {
 @HiltViewModel
 class WifiProvisionViewModel @Inject constructor(
     private val wifiScanner: WifiScanner,
-    private val bleManager: BleManager
+    private val bleManager: BleManager,
+    private val httpRepository: HttpRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(WifiProvisionState())
@@ -162,12 +166,49 @@ class WifiProvisionViewModel @Inject constructor(
 
                 if (success) {
                     _state.update {
-                        it.copy(
-                            isConnecting = false,
-                            connectionResult = ConnectionResult.Success("WiFi 凭据已发送，设备将尝试连接"),
-                            selectedNetwork = null,
-                            password = ""
-                        )
+                        it.copy(connectionResult = ConnectionResult.Success("WiFi 凭据已发送，等待连接..."))
+                    }
+
+                    // Poll Status characteristic to check WiFi connected (byte[4])
+                    val connected = withTimeoutOrNull(30000L) {
+                        for (i in 1..15) {
+                            delay(2000)
+                            val data = bleManager.readCharacteristic(PpgGattProfile.CHAR_STATUS)
+                            if (data != null && data.size >= 5 && data[4].toInt() and 0xFF == 1) {
+                                return@withTimeoutOrNull true
+                            }
+                            Log.d(TAG, "WiFi poll #$i: connected=${data?.get(4)?.toInt() and 0xFF}")
+                        }
+                        false
+                    }
+
+                    if (connected == true) {
+                        // WiFi connected, try to get IP via HTTP
+                        val ip = try {
+                            val status = httpRepository.getDeviceStatus()
+                            status?.ip
+                        } catch (_: Exception) { null }
+
+                        _state.update {
+                            it.copy(
+                                isConnecting = false,
+                                connectionResult = ConnectionResult.Success(
+                                    if (ip != null) "WiFi 已连接\nIP: $ip"
+                                    else "WiFi 已连接"
+                                ),
+                                selectedNetwork = null,
+                                password = ""
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                isConnecting = false,
+                                connectionResult = ConnectionResult.Error("WiFi 连接超时，请检查密码"),
+                                selectedNetwork = null,
+                                password = ""
+                            )
+                        }
                     }
                 } else {
                     _state.update {
