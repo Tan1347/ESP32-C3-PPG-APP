@@ -177,7 +177,7 @@ class WifiProvisionViewModel @Inject constructor(
                             if (data != null && data.size >= 5 && data[4].toInt() and 0xFF == 1) {
                                 return@withTimeoutOrNull true
                             }
-                            Log.d(TAG, "WiFi poll #$i: connected=${data?.get(4)?.toInt() and 0xFF}")
+                            Log.d(TAG, "WiFi poll #$i: connected=${data?.get(4)?.toInt()?.and(0xFF)}")
                         }
                         false
                     }
