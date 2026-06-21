@@ -199,19 +199,28 @@ jobs:
             echo "No previous tag found, using last 20 commits"
           fi
 
-          # 按 conventional commits 分类获取提交
+          # 按 conventional commits 分类获取提交（最多20条，总长度300字符）
           FEAT=""
           FIX=""
           OTHER=""
           COMMIT_COUNT=0
+          TOTAL_LEN=0
+          MAX_TOTAL_LEN=300
+          TRUNCATED=false
           while IFS='|' read -r hash subject date; do
             [ -z "$hash" ] && continue
             COMMIT_COUNT=$((COMMIT_COUNT + 1))
             short_date=$(echo "$date" | cut -d' ' -f1)
-            if [ ${#subject} -gt 120 ]; then
-              subject="${subject:0:117}..."
+            if [ ${#subject} -gt 60 ]; then
+              subject="${subject:0:57}..."
             fi
-            line="- \`${hash}\` ${subject} (${short_date})"
+            line="- \`${hash}\` ${subject}"
+            line_len=${#line}
+            if [ $((TOTAL_LEN + line_len + 1)) -gt $MAX_TOTAL_LEN ]; then
+              TRUNCATED=true
+              break
+            fi
+            TOTAL_LEN=$((TOTAL_LEN + line_len + 1))
             case "$subject" in
               feat:*|Feat:*) printf -v FEAT '%s%s\n' "$FEAT" "$line" ;;
               fix:*|Fix:*) printf -v FIX '%s%s\n' "$FIX" "$line" ;;
@@ -255,8 +264,9 @@ jobs:
             if [ "$COMMIT_COUNT" -eq 0 ]; then
               echo "- 无提交记录"
             fi
-            if [ "$COMMIT_COUNT" -gt 20 ]; then
-              echo "> 共 ${COMMIT_COUNT} 个提交，仅显示最近 20 个"
+            if [ "$TRUNCATED" = true ]; then
+              echo ""
+              echo "> 提交记录已截断（总长度限制 300 字符）"
             fi
             echo ""
             echo "---"
