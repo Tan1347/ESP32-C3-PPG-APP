@@ -587,7 +587,6 @@ class BleManager @Inject constructor(
         Log.d(TAG, "Stop UART record")
         return writeCommand(byteArrayOf(PpgGattProfile.CMD_UART_RECORD, 0x00))
     }
-    }
 
     /**
      * Trigger file download via BLE command 0x32

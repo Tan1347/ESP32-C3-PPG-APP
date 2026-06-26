@@ -1,5 +1,6 @@
 package org.tan.ppgtoolapp.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.tan.ppgtoolapp.data.ble.BleManager
@@ -44,6 +45,7 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     companion object {
+        private const val TAG = "SettingsViewModel"
         val BAUD_RATES = listOf(9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1000000, 2000000, 5000000)
     }
 
