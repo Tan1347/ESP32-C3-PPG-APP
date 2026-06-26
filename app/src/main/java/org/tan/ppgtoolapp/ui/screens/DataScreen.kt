@@ -1,6 +1,7 @@
 package org.tan.ppgtoolapp.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,11 +18,90 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.tan.ppgtoolapp.data.local.FileMetadata
 import org.tan.ppgtoolapp.data.local.FileType
-import org.tan.ppgtoolapp.data.local.PpgAnalyzer
 import org.tan.ppgtoolapp.viewmodel.DataViewModel
 
+/**
+ * 数据页面 - 子模块入口
+ */
 @Composable
 fun DataScreen(
+    onNavigateToAnalysis: (String, String) -> Unit = { _, _ -> },
+    onNavigateToRemoteFiles: () -> Unit = {},
+    onNavigateToUartRecord: () -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("数据管理", style = MaterialTheme.typography.titleMedium)
+
+        // 远端文件模块
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onNavigateToRemoteFiles)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.CloudDownload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("远端文件", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "从设备 TF 卡下载文件，需同一 WiFi 网络",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null)
+            }
+        }
+
+        // 串口记录模块
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onNavigateToUartRecord)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.DeveloperBoard,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("串口数据记录", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "通过 BLE 控制设备录制串口数据到 TF 卡",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null)
+            }
+        }
+    }
+}
+
+/**
+ * 远端文件页面 - 原 DataScreen 内容
+ */
+@Composable
+fun RemoteFileScreen(
     onNavigateToAnalysis: (String, String) -> Unit = { _, _ -> },
     viewModel: DataViewModel = hiltViewModel()
 ) {

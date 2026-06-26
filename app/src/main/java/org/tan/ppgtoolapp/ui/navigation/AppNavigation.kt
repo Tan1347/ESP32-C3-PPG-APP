@@ -28,6 +28,8 @@ sealed class Screen(val route: String, val title: String) {
     data object WifiProvision : Screen("wifi_provision", "WiFi配网")
     data object OtaUpgrade : Screen("ota_upgrade", "OTA升级")
     data object Analysis : Screen("analysis/{filePath}/{fileName}", "数据分析")
+    data object RemoteFiles : Screen("remote_files", "远端文件")
+    data object UartRecord : Screen("uart_record", "串口记录")
 }
 
 // 主页路由（显示底部导航栏）
@@ -121,9 +123,19 @@ fun AppNavigation() {
                 DataScreen(
                     onNavigateToAnalysis = { filePath, fileName ->
                         navController.navigate("analysis/$filePath/$fileName")
+                    },
+                    onNavigateToRemoteFiles = { navController.navigate(Screen.RemoteFiles.route) },
+                    onNavigateToUartRecord = { navController.navigate(Screen.UartRecord.route) }
+                )
+            }
+            composable(Screen.RemoteFiles.route) {
+                RemoteFileScreen(
+                    onNavigateToAnalysis = { filePath, fileName ->
+                        navController.navigate("analysis/$filePath/$fileName")
                     }
                 )
             }
+            composable(Screen.UartRecord.route) { UartRecordScreen() }
             composable(Screen.Settings.route) { SettingsScreen(navController) }
             composable(Screen.WifiProvision.route) { WifiProvisionScreen(navController) }
             composable(Screen.OtaUpgrade.route) { OtaScreen(navController) }

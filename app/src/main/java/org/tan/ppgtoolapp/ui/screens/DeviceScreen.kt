@@ -181,7 +181,10 @@ fun DeviceScreen(
             val matchedDevices = sortedDevices.filter { isMatchingDevice(it) }
             val otherDevices = sortedDevices.filter { !isMatchingDevice(it) }
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 // 匹配设备
                 if (matchedDevices.isNotEmpty()) {
                     item {
