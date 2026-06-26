@@ -3,6 +3,7 @@ package org.tan.ppgtoolapp.data.network
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -77,6 +78,7 @@ class HttpRepository @Inject constructor(
                     var totalBytes = 0L
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
+                        ensureActive()  // Check for coroutine cancellation
                         output.write(buffer, 0, bytesRead)
                         crc.update(buffer, 0, bytesRead)
                         totalBytes += bytesRead
@@ -104,24 +106,25 @@ class HttpRepository @Inject constructor(
     }
 
     suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
-        try { api?.getStatus() } catch (e: Exception) { null }
+        try { api?.getStatus() } catch (e: Exception) { Log.e(TAG, "getDeviceStatus error: ${e.message}"); null }
     }
     suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
         try {
             val requestBody = ProgressRequestBody(file, onProgress)
-            api?.uploadFirmware(requestBody)
-            true
+            val response = api?.uploadFirmware(requestBody)
+            response != null
         } catch (e: Exception) {
+            Log.e(TAG, "Upload firmware error: ${e.message}")
             false
         }
     }
 
     suspend fun getOtaInfo(): OtaInfoResponse? = withContext(Dispatchers.IO) {
-        try { api?.getOtaInfo() } catch (e: Exception) { null }
+        try { api?.getOtaInfo() } catch (e: Exception) { Log.e(TAG, "getOtaInfo error: ${e.message}"); null }
     }
 
     suspend fun shutdown(): Boolean = withContext(Dispatchers.IO) {
-        try { api?.shutdown(); true } catch (e: Exception) { false }
+        try { api?.shutdown(); true } catch (e: Exception) { Log.e(TAG, "shutdown error: ${e.message}"); false }
     }
 
     /**
@@ -140,31 +143,33 @@ class HttpRepository @Inject constructor(
             val request = Request.Builder().url(url).build()
             val response = client.newCall(request).execute()
 
-            if (!response.isSuccessful) {
-                response.close()
-                return@withContext false
-            }
+            response.use { resp ->
+                if (!resp.isSuccessful) {
+                    return@withContext false
+                }
 
-            response.body?.byteStream()?.use { input ->
-                outputFile.parentFile?.mkdirs()
-                outputFile.outputStream().use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalBytes = 0L
-                    val totalSize = response.body?.contentLength() ?: -1
+                resp.body?.byteStream()?.use { input ->
+                    outputFile.parentFile?.mkdirs()
+                    outputFile.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalBytes = 0L
+                        val totalSize = resp.body?.contentLength() ?: -1
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalBytes += bytesRead
-                        if (totalSize > 0) {
-                            onProgress?.invoke((totalBytes * 100 / totalSize).toInt())
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            ensureActive()
+                            output.write(buffer, 0, bytesRead)
+                            totalBytes += bytesRead
+                            if (totalSize > 0) {
+                                onProgress?.invoke((totalBytes * 100 / totalSize).toInt())
+                            }
                         }
                     }
                 }
             }
-            response.close()
             true
         } catch (e: Exception) {
+            Log.e(TAG, "Download from GitHub error: ${e.message}")
             false
         }
     }

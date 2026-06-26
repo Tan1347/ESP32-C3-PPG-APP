@@ -37,6 +37,8 @@ object PpgGattProfile {
     const val CMD_LOG_LEVEL: Byte = 0x30
     const val CMD_LOG_STATUS: Byte = 0x31
     const val CMD_FILE_DOWNLOAD: Byte = 0x32  /* BLE trigger + HTTP download */
+    const val CMD_UART_RECORD: Byte = 0x50    /* UART recording control */
+    const val CMD_UART_RECORD: Byte = 0x50    /* UART recording control */
 
     // 设备名前缀
     const val DEVICE_NAME_PREFIX = "PPG-Monitor"

@@ -27,6 +27,15 @@ sealed class TimeSyncResult {
     data class Error(val message: String) : TimeSyncResult()
 }
 
+data class UartRecordState(
+    val isRecording: Boolean = false,
+    val selectedBaudRate: Int = 115200,
+    val selectedDataBits: Int = 8,
+    val selectedParity: Int = 0,      // 0=none, 1=even, 2=odd
+    val selectedStopBits: Int = 1,
+    val result: String? = null
+)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val updateChecker: UpdateChecker,
@@ -34,11 +43,18 @@ class SettingsViewModel @Inject constructor(
     private val bleManager: BleManager
 ) : ViewModel() {
 
+    companion object {
+        val BAUD_RATES = listOf(9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1000000, 2000000, 5000000)
+    }
+
     private val _timeSyncState = MutableStateFlow(TimeSyncState())
     val timeSyncState: StateFlow<TimeSyncState> = _timeSyncState.asStateFlow()
 
     private val _updateState = MutableStateFlow(UpdateState())
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+
+    private val _uartState = MutableStateFlow(UartRecordState())
+    val uartState: StateFlow<UartRecordState> = _uartState.asStateFlow()
 
     private var downloadedFile: File? = null
 
@@ -175,5 +191,78 @@ class SettingsViewModel @Inject constructor(
 
     fun clearTimeSyncResult() {
         _timeSyncState.update { it.copy(result = null) }
+    }
+
+    /**
+     * Update selected baud rate for UART recording
+     */
+    fun setBaudRate(baudRate: Int) {
+        _uartState.update { it.copy(selectedBaudRate = baudRate) }
+    }
+
+    fun setDataBits(dataBits: Int) {
+        _uartState.update { it.copy(selectedDataBits = dataBits) }
+    }
+
+    fun setParity(parity: Int) {
+        _uartState.update { it.copy(selectedParity = parity) }
+    }
+
+    fun setStopBits(stopBits: Int) {
+        _uartState.update { it.copy(selectedStopBits = stopBits) }
+    }
+
+    /**
+     * Start UART data recording
+     */
+    fun startUartRecord() {
+        if (_uartState.value.isRecording) return
+
+        viewModelScope.launch {
+            val state = _uartState.value
+            Log.d(TAG, "Start UART record: baud=${state.selectedBaudRate} data=${state.selectedDataBits} parity=${state.selectedParity} stop=${state.selectedStopBits}")
+
+            val success = bleManager.startUartRecord(
+                baudRate = state.selectedBaudRate,
+                dataBits = state.selectedDataBits,
+                parity = state.selectedParity,
+                stopBits = state.selectedStopBits
+            )
+            if (success) {
+                _uartState.update {
+                    it.copy(isRecording = true, result = "Recording started at ${state.selectedBaudRate} baud")
+                }
+            } else {
+                _uartState.update {
+                    it.copy(result = "Failed to start recording, check BLE connection")
+                }
+            }
+        }
+    }
+
+    /**
+     * Stop UART data recording
+     */
+    fun stopUartRecord() {
+        if (!_uartState.value.isRecording) return
+
+        viewModelScope.launch {
+            Log.d(TAG, "Stop UART record")
+
+            val success = bleManager.stopUartRecord()
+            if (success) {
+                _uartState.update {
+                    it.copy(isRecording = false, result = "Recording stopped")
+                }
+            } else {
+                _uartState.update {
+                    it.copy(result = "Failed to stop recording, check BLE connection")
+                }
+            }
+        }
+    }
+
+    fun clearUartResult() {
+        _uartState.update { it.copy(result = null) }
     }
 }

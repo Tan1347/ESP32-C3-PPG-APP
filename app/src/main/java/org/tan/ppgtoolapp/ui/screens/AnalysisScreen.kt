@@ -35,12 +35,17 @@ fun AnalysisScreen(
 
     LaunchedEffect(filePath) {
         try {
-            val file = File(filePath)
-            records = CsvParser.parsePpgResultFile(file)
-            statistics = PpgAnalyzer.analyze(records)
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val file = File(filePath)
+                val parsedRecords = CsvParser.parsePpgResultFile(file)
+                val stats = PpgAnalyzer.analyze(parsedRecords)
+                Pair(parsedRecords, stats)
+            }
+            records = result.first
+            statistics = result.second
             isLoading = false
         } catch (e: Exception) {
-            error = "解析失败: ${e.message}"
+            error = "Parse failed: ${e.message}"
             isLoading = false
         }
     }
@@ -66,14 +71,15 @@ fun AnalysisScreen(
                     }) {
                         Icon(Icons.Filled.TableChart, contentDescription = "导出 CSV")
                     }
-                    // 导出 PDF
-                    if (statistics != null) {
+                    // Export PDF
+                    val stats = statistics
+                    if (stats != null) {
                         IconButton(onClick = {
-                            val file = ExportHelper.exportPdf(context, statistics!!, fileName)
+                            val file = ExportHelper.exportPdf(context, stats, fileName)
                             if (file != null) {
                                 ExportHelper.shareFile(context, file, "application/pdf")
                             } else {
-                                Toast.makeText(context, "PDF 导出失败", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "PDF export failed", Toast.LENGTH_SHORT).show()
                             }
                         }) {
                             Icon(Icons.Filled.PictureAsPdf, contentDescription = "导出 PDF")

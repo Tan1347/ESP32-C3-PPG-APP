@@ -12,8 +12,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 
@@ -74,10 +72,9 @@ class MonitorViewModel @Inject constructor(
     private val _deviceStatus = MutableStateFlow(DeviceStatus())
     val deviceStatus: StateFlow<DeviceStatus> = _deviceStatus.asStateFlow()
 
-    // 使用 Mutex 保证线程安全
-    private val bufferMutex = Mutex()
-    private val redBuffer = mutableListOf<Float>()
-    private val irBuffer = mutableListOf<Float>()
+    // Waveform buffers (HR and SpO2 trend data for chart display)
+    private val hrBuffer = ArrayDeque<Float>(WAVEFORM_BUFFER_SIZE + 1)
+    private val spo2Buffer = ArrayDeque<Float>(WAVEFORM_BUFFER_SIZE + 1)
 
     // 标记是否已查询过状态（防止重复查询）
     private var hasFetchedStatus = false
@@ -93,21 +90,19 @@ class MonitorViewModel @Inject constructor(
                     val pi = data[PpgDataOffset.PI].toInt() and 0xFF
                     val quality = data[PpgDataOffset.QUALITY].toInt() and 0xFF
 
-                    bufferMutex.withLock {
-                        redBuffer.add(hr.toFloat())
-                        irBuffer.add(spo2.toFloat())
-                        if (redBuffer.size > WAVEFORM_BUFFER_SIZE) redBuffer.removeAt(0)
-                        if (irBuffer.size > WAVEFORM_BUFFER_SIZE) irBuffer.removeAt(0)
+                    hrBuffer.addLast(hr.toFloat())
+                    spo2Buffer.addLast(spo2.toFloat())
+                    if (hrBuffer.size > WAVEFORM_BUFFER_SIZE) hrBuffer.removeFirst()
+                    if (spo2Buffer.size > WAVEFORM_BUFFER_SIZE) spo2Buffer.removeFirst()
 
-                        _ppgData.value = PpgData(
-                            hr = hr,
-                            spo2 = spo2,
-                            pi = pi,
-                            quality = quality,
-                            redValues = redBuffer.toList(),
-                            irValues = irBuffer.toList()
-                        )
-                    }
+                    _ppgData.value = PpgData(
+                        hr = hr,
+                        spo2 = spo2,
+                        pi = pi,
+                        quality = quality,
+                        redValues = hrBuffer.toList(),
+                        irValues = spo2Buffer.toList()
+                    )
                 }
             }
         }
@@ -128,24 +123,28 @@ class MonitorViewModel @Inject constructor(
 
     fun startMeasuring() {
         viewModelScope.launch {
-            bleManager.writeCommand(byteArrayOf(0x01))
-            _isMeasuring.value = true
+            if (bleManager.writeCommand(byteArrayOf(0x01))) {
+                _isMeasuring.value = true
+            } else {
+                Log.e(TAG, "Failed to send start measuring command")
+            }
         }
     }
 
     fun stopMeasuring() {
         viewModelScope.launch {
-            bleManager.writeCommand(byteArrayOf(0x02))
-            _isMeasuring.value = false
+            if (bleManager.writeCommand(byteArrayOf(0x02))) {
+                _isMeasuring.value = false
+            } else {
+                Log.e(TAG, "Failed to send stop measuring command")
+            }
         }
     }
 
     fun clearWaveform() {
         viewModelScope.launch {
-            bufferMutex.withLock {
-                redBuffer.clear()
-                irBuffer.clear()
-            }
+            hrBuffer.clear()
+            spo2Buffer.clear()
             _ppgData.value = PpgData()
         }
     }

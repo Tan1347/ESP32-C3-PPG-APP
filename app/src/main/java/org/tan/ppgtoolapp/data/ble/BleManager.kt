@@ -37,14 +37,9 @@ sealed class ConnectionState {
 class BleManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    companion object {
-        private const val TAG = "BleManager"
-        private const val READ_TIMEOUT_MS = 5000L
-        private const val AUTO_RECONNECT_DELAY_MS = 3000L
-    }
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
-    private var bluetoothGatt: BluetoothGatt? = null
+    @Volatile private var bluetoothGatt: BluetoothGatt? = null
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -68,12 +63,21 @@ class BleManager @Inject constructor(
     private var currentScanner: BluetoothLeScanner? = null
     private var currentScanCallback: ScanCallback? = null
 
-    // 自动重连相关
+    // Auto-reconnect state
     private var lastConnectedDevice: BluetoothDevice? = null
     private var lastConnectedName: String = ""
     private var isAutoReconnecting = false
+    @Volatile private var intentionalDisconnect = false
     private var autoReconnectRunnable: Runnable? = null
     private val reconnectHandler = Handler(Looper.getMainLooper())
+    private var reconnectAttempt = 0
+    companion object {
+        private const val TAG = "BleManager"
+        private const val READ_TIMEOUT_MS = 3000L
+        private const val MAX_RECONNECT_ATTEMPTS = 10
+        private const val BACKOFF_BASE_MS = 2000L
+        private const val BACKOFF_MAX_MS = 30000L
+    }
 
     /**
      * 扫描 BLE 设备
@@ -200,18 +204,18 @@ class BleManager @Inject constructor(
                     when (newState) {
                         BluetoothProfile.STATE_CONNECTED -> {
                             bluetoothGatt = gatt
-                            isAutoReconnecting = false
+                            intentionalDisconnect = false
                             _connectionState.value = ConnectionState.Connected(device, deviceName)
-                            Log.i(TAG, "设备已连接: $deviceName (${device.address})")
+                            Log.i(TAG, "Connected: $deviceName (${device.address})")
                             gatt.discoverServices()
                         }
                         BluetoothProfile.STATE_DISCONNECTED -> {
-                            Log.w(TAG, "设备断开连接: $deviceName (${device.address})")
+                            Log.w(TAG, "Disconnected: $deviceName (${device.address})")
                             bluetoothGatt = null
                             _connectionState.value = ConnectionState.Disconnected
 
-                            // 如果不是主动断开，尝试自动重连
-                            if (!isAutoReconnecting) {
+                            // Auto-reconnect unless intentional disconnect
+                            if (!intentionalDisconnect) {
                                 startAutoReconnect()
                             }
 
@@ -388,22 +392,20 @@ class BleManager @Inject constructor(
         val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return null
         val char = service.getCharacteristic(uuid) ?: return null
 
-        // 设置临时特征读取标记（线程安全）
-        synchronized(pendingReadLock) {
-            pendingReadUuid = uuid
-        }
-
         return withTimeoutOrNull(READ_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
+                // Set both uuid and continuation atomically to prevent race with BLE callback
                 synchronized(pendingReadLock) {
+                    pendingReadUuid = uuid
                     pendingReadContinuation = continuation
                 }
                 gatt.readCharacteristic(char)
 
-                // 超时处理
                 continuation.invokeOnCancellation {
-                    pendingReadContinuation = null
-                    pendingReadUuid = null
+                    synchronized(pendingReadLock) {
+                        pendingReadContinuation = null
+                        pendingReadUuid = null
+                    }
                 }
             }
         }
@@ -411,7 +413,7 @@ class BleManager @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
-        isAutoReconnecting = true  // 标记为主动断开，不自动重连
+        intentionalDisconnect = true
         stopAutoReconnect()
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
@@ -420,44 +422,62 @@ class BleManager @Inject constructor(
     }
 
     /**
-     * 开始自动重连
+     * Start auto-reconnect with exponential backoff and retry limit
      */
     @SuppressLint("MissingPermission")
     private fun startAutoReconnect() {
         val device = lastConnectedDevice ?: return
+
+        if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            Log.w(TAG, "Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached, giving up")
+            isAutoReconnecting = false
+            reconnectAttempt = 0
+            _connectionState.value = ConnectionState.Disconnected
+            return
+        }
+
         isAutoReconnecting = true
-        Log.i(TAG, "开始自动重连: $lastConnectedName (${device.address})")
+        reconnectAttempt++
+        val delayMs = minOf(BACKOFF_BASE_MS * (1L shl (reconnectAttempt - 1)), BACKOFF_MAX_MS)
+        Log.i(TAG, "Auto-reconnect attempt $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS, delay=${delayMs}ms")
 
         autoReconnectRunnable = Runnable {
             if (isAutoReconnecting && bluetoothGatt == null) {
-                Log.d(TAG, "尝试重连...")
+                Log.d(TAG, "Reconnect attempt $reconnectAttempt...")
                 try {
                     device.connectGatt(context, false, object : BluetoothGattCallback() {
                         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                             when (newState) {
                                 BluetoothProfile.STATE_CONNECTED -> {
-                                    Log.i(TAG, "重连成功!")
+                                    Log.i(TAG, "Reconnected!")
                                     bluetoothGatt = gatt
                                     isAutoReconnecting = false
+                                    reconnectAttempt = 0
                                     _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
                                     gatt.discoverServices()
                                 }
                                 BluetoothProfile.STATE_DISCONNECTED -> {
-                                    Log.w(TAG, "重连失败，继续尝试...")
+                                    Log.w(TAG, "Reconnect failed")
                                     gatt.close()
-                                    // 继续重连
                                     startAutoReconnect()
                                 }
                             }
                         }
+
+                        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                Log.i(TAG, "Reconnect services discovered, enabling notifications")
+                                enableNotifications(gatt)
+                            }
+                        }
                     })
                 } catch (e: Exception) {
-                    Log.e(TAG, "重连异常: ${e.message}")
+                    Log.e(TAG, "Reconnect error: ${e.message}")
                     startAutoReconnect()
                 }
             }
         }
-        reconnectHandler.postDelayed(autoReconnectRunnable!!, AUTO_RECONNECT_DELAY_MS)
+        reconnectHandler.postDelayed(autoReconnectRunnable!!, delayMs)
     }
 
     /**
@@ -532,6 +552,41 @@ class BleManager @Inject constructor(
     suspend fun queryBatteryStatus(): Boolean {
         Log.d(TAG, "查询电池状态: CMD=0x%02X".format(PpgGattProfile.CMD_QUERY_BATTERY))
         return writeCommand(byteArrayOf(PpgGattProfile.CMD_QUERY_BATTERY))
+    }
+
+    /**
+     * Start UART recording with specified config
+     * Command: [0x50][0x01][baud_h][baud_2][baud_1][baud_l][data_bits][parity][stop_bits]
+     */
+    suspend fun startUartRecord(
+        baudRate: Int = 115200,
+        dataBits: Int = 8,
+        parity: Int = 0,
+        stopBits: Int = 1
+    ): Boolean {
+        val cmd = ByteArray(8)
+        cmd[0] = PpgGattProfile.CMD_UART_RECORD
+        cmd[1] = 0x01  // enable
+        cmd[2] = (baudRate shr 24).toByte()
+        cmd[3] = (baudRate shr 16).toByte()
+        cmd[4] = (baudRate shr 8).toByte()
+        cmd[5] = baudRate.toByte()
+        cmd[6] = dataBits.toByte()
+        cmd[7] = parity.toByte()
+        // Note: stopBits will be added below
+        val fullCmd = cmd + stopBits.toByte()
+        Log.d(TAG, "Start UART record: baud=$baudRate data=$dataBits parity=$parity stop=$stopBits")
+        return writeCommand(fullCmd)
+    }
+
+    /**
+     * Stop UART recording
+     * Command: [0x50][0x00]
+     */
+    suspend fun stopUartRecord(): Boolean {
+        Log.d(TAG, "Stop UART record")
+        return writeCommand(byteArrayOf(PpgGattProfile.CMD_UART_RECORD, 0x00))
+    }
     }
 
     /**
