@@ -59,7 +59,7 @@ class HttpRepository @Inject constructor(
      * @param onProgress callback: (percent, downloadedBytes, totalBytes)
      * @return DownloadResult with file and verification status
      */
-    override suspend fun downloadFile(filename: String, onProgress: ((Int, Long, Long) -> Unit)? = null): DownloadResult? = withContext(Dispatchers.IO) {
+    override suspend fun downloadFile(filename: String, onProgress: ((Int, Long, Long) -> Unit)?): DownloadResult? = withContext(Dispatchers.IO) {
         try {
             val response = api?.downloadFile(filename) ?: return@withContext null
             if (!response.isSuccessful) return@withContext null
@@ -125,7 +125,7 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    override suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): OperationResult = withContext(Dispatchers.IO) {
+    override suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)?): OperationResult = withContext(Dispatchers.IO) {
         try {
             val requestBody = ProgressRequestBody(file, onProgress)
             val response = api?.uploadFirmware(requestBody)
@@ -167,7 +167,7 @@ class HttpRepository @Inject constructor(
     override suspend fun downloadFromGitHub(
         url: String,
         outputFile: File,
-        onProgress: ((Int) -> Unit)? = null
+        onProgress: ((Int) -> Unit)?
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val client = AppHttpClient.get(context)

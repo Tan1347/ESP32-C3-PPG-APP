@@ -53,7 +53,7 @@ class BleManager @Inject constructor(
     /**
      * Scan for BLE devices
      */
-    override fun scan(useUuidFilter: Boolean = false): Flow<BleDevice> = scanner.scan(useUuidFilter)
+    override fun scan(useUuidFilter: Boolean): Flow<BleDevice> = scanner.scan(useUuidFilter)
 
     /**
      * Stop scanning
@@ -64,7 +64,7 @@ class BleManager @Inject constructor(
      * Connect to a device
      */
     @SuppressLint("MissingPermission")
-    override suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
+    override suspend fun connect(device: BluetoothDevice, deviceName: String): Boolean {
         connection.connect(device, deviceName)
         // Wait for connection state to become Connected or Error
         return try {
