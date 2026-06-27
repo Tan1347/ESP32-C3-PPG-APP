@@ -349,7 +349,7 @@ fun PpgWaveform(
             val width = size.width
             val height = size.height
 
-            // 绘制红光波形
+            // Draw red waveform
             if (redValues.size >= 2) {
                 val path = Path()
                 val step = width / (redValues.size - 1).coerceAtLeast(1)
@@ -365,7 +365,7 @@ fun PpgWaveform(
                 drawPath(path, WaveformRed, style = Stroke(width = 2f))
             }
 
-            // 绘制红外光波形
+            // Draw IR waveform
             if (irValues.size >= 2) {
                 val path = Path()
                 val step = width / (irValues.size - 1).coerceAtLeast(1)

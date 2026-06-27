@@ -160,10 +160,10 @@ class WifiProvisionViewModel @Inject constructor(
 
                     if (connected == true) {
                         // WiFi connected, try to get IP via HTTP
-                        val ip = try {
-                            val status = httpRepository.getDeviceStatus()
-                            status?.ip
-                        } catch (_: Exception) { null }
+                        val ip = when (val result = httpRepository.getDeviceStatus()) {
+                            is ApiResult.Success -> result.data.ip
+                            is ApiResult.Error -> null
+                        }
 
                         _state.update {
                             it.copy(

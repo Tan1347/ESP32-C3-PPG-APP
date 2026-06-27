@@ -66,11 +66,13 @@ fun DeviceScreen(
         }
     }
 
-    // 排序：匹配设备置顶，然后按信号强度排序
-    val sortedDevices = devices.sortedWith(
-        compareByDescending<BleDevice> { isMatchingDevice(it) }
-            .thenByDescending { it.rssi }
-    )
+    // Sort: matching devices first, then by signal strength
+    val sortedDevices = remember(devices) {
+        devices.sortedWith(
+            compareByDescending<BleDevice> { isMatchingDevice(it) }
+                .thenByDescending { it.rssi }
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // 连接状态

@@ -76,6 +76,7 @@ class HttpRepository @Inject constructor(
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     var totalBytes = 0L
+                    var lastProgressTime = 0L
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         ensureActive()  // Check for coroutine cancellation
@@ -83,8 +84,13 @@ class HttpRepository @Inject constructor(
                         crc.update(buffer, 0, bytesRead)
                         totalBytes += bytesRead
                         if (totalSize > 0) {
-                            val percent = (totalBytes * 100 / totalSize).toInt()
-                            onProgress?.invoke(percent, totalBytes, totalSize)
+                            val now = System.currentTimeMillis()
+                            // Throttle progress updates to max 10 per second
+                            if (now - lastProgressTime >= 100) {
+                                val percent = (totalBytes * 100 / totalSize).toInt()
+                                onProgress?.invoke(percent, totalBytes, totalSize)
+                                lastProgressTime = now
+                            }
                         }
                     }
                 }
@@ -105,26 +111,48 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    suspend fun getDeviceStatus(): DeviceStatusResponse? = withContext(Dispatchers.IO) {
-        try { api?.getStatus() } catch (e: Exception) { Log.e(TAG, "getDeviceStatus error: ${e.message}"); null }
-    }
-    suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
+    suspend fun getDeviceStatus(): ApiResult<DeviceStatusResponse> = withContext(Dispatchers.IO) {
         try {
-            val requestBody = ProgressRequestBody(file, onProgress)
-            val response = api?.uploadFirmware(requestBody)
-            response != null
+            val response = api?.getStatus()
+            if (response != null) ApiResult.Success(response)
+            else ApiResult.Error("Device not connected")
         } catch (e: Exception) {
-            Log.e(TAG, "Upload firmware error: ${e.message}")
-            false
+            Log.e(TAG, "getDeviceStatus error: ${e.message}")
+            ApiResult.Error("Failed to get device status", e)
         }
     }
 
-    suspend fun getOtaInfo(): OtaInfoResponse? = withContext(Dispatchers.IO) {
-        try { api?.getOtaInfo() } catch (e: Exception) { Log.e(TAG, "getOtaInfo error: ${e.message}"); null }
+    suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): OperationResult = withContext(Dispatchers.IO) {
+        try {
+            val requestBody = ProgressRequestBody(file, onProgress)
+            val response = api?.uploadFirmware(requestBody)
+            if (response != null) OperationResult.Success
+            else OperationResult.Error("Upload failed: no response")
+        } catch (e: Exception) {
+            Log.e(TAG, "Upload firmware error: ${e.message}")
+            OperationResult.Error("Upload failed: ${e.message}", e)
+        }
     }
 
-    suspend fun shutdown(): Boolean = withContext(Dispatchers.IO) {
-        try { api?.shutdown(); true } catch (e: Exception) { Log.e(TAG, "shutdown error: ${e.message}"); false }
+    suspend fun getOtaInfo(): ApiResult<OtaInfoResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = api?.getOtaInfo()
+            if (response != null) ApiResult.Success(response)
+            else ApiResult.Error("Device not connected")
+        } catch (e: Exception) {
+            Log.e(TAG, "getOtaInfo error: ${e.message}")
+            ApiResult.Error("Failed to get OTA info", e)
+        }
+    }
+
+    suspend fun shutdown(): OperationResult = withContext(Dispatchers.IO) {
+        try {
+            api?.shutdown()
+            OperationResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "shutdown error: ${e.message}")
+            OperationResult.Error("Shutdown failed", e)
+        }
     }
 
     /**

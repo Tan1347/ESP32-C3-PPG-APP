@@ -27,7 +27,7 @@ sealed class Screen(val route: String, val title: String) {
     data object Settings : Screen("settings", "设置")
     data object WifiProvision : Screen("wifi_provision", "WiFi配网")
     data object OtaUpgrade : Screen("ota_upgrade", "OTA升级")
-    data object Analysis : Screen("analysis/{filePath}/{fileName}", "数据分析")
+    data object Analysis : Screen("analysis/{encodedPath}/{encodedName}", "数据分析")
     data object RemoteFiles : Screen("remote_files", "远端文件")
     data object UartRecord : Screen("uart_record", "串口记录")
 }
@@ -122,7 +122,9 @@ fun AppNavigation() {
             composable(Screen.Data.route) {
                 DataScreen(
                     onNavigateToAnalysis = { filePath, fileName ->
-                        navController.navigate("analysis/$filePath/$fileName")
+                        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
+                        val encodedName = java.net.URLEncoder.encode(fileName, "UTF-8")
+                        navController.navigate("analysis/$encodedPath/$encodedName")
                     },
                     onNavigateToRemoteFiles = { navController.navigate(Screen.RemoteFiles.route) },
                     onNavigateToUartRecord = { navController.navigate(Screen.UartRecord.route) }
@@ -131,7 +133,9 @@ fun AppNavigation() {
             composable(Screen.RemoteFiles.route) {
                 RemoteFileScreen(
                     onNavigateToAnalysis = { filePath, fileName ->
-                        navController.navigate("analysis/$filePath/$fileName")
+                        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
+                        val encodedName = java.net.URLEncoder.encode(fileName, "UTF-8")
+                        navController.navigate("analysis/$encodedPath/$encodedName")
                     }
                 )
             }
@@ -142,15 +146,17 @@ fun AppNavigation() {
             composable(
                 route = Screen.Analysis.route,
                 arguments = listOf(
-                    navArgument("filePath") { type = NavType.StringType },
-                    navArgument("fileName") { type = NavType.StringType }
+                    navArgument("encodedPath") { type = NavType.StringType },
+                    navArgument("encodedName") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
-                val fileName = backStackEntry.arguments?.getString("fileName") ?: ""
+                val encodedPath = backStackEntry.arguments?.getString("encodedPath") ?: ""
+                val encodedName = backStackEntry.arguments?.getString("encodedName") ?: ""
+                val filePath = java.net.URLDecoder.decode(encodedPath, "UTF-8")
+                val fileName = java.net.URLDecoder.decode(encodedName, "UTF-8")
                 AnalysisScreen(
-                    filePath = java.net.URLDecoder.decode(filePath, "UTF-8"),
-                    fileName = java.net.URLDecoder.decode(fileName, "UTF-8"),
+                    filePath = filePath,
+                    fileName = fileName,
                     onBack = { navController.popBackStack() }
                 )
             }

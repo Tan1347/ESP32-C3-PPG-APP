@@ -18,6 +18,9 @@ interface FileMetadataDao {
     @Query("SELECT EXISTS(SELECT 1 FROM downloaded_files WHERE fileName = :fileName)")
     suspend fun exists(fileName: String): Boolean
 
+    @Query("SELECT fileName FROM downloaded_files WHERE fileName IN (:fileNames)")
+    suspend fun getExistingFileNames(fileNames: List<String>): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(metadata: FileMetadata)
 

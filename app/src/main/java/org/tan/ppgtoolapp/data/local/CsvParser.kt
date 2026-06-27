@@ -1,6 +1,7 @@
 package org.tan.ppgtoolapp.data.local
 
 import java.io.File
+import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -13,23 +14,39 @@ object CsvParser {
 
     private const val RECORD_SIZE = 14
     private const val CHECKSUM_OFFSET = 13
+    private const val BUFFER_SIZE = 8192  // 8KB buffer for streaming
 
     /**
-     * Parse a binary PPG result file
+     * Parse a binary PPG result file (streaming, memory efficient)
      */
     fun parsePpgResultFile(file: File): List<PpgRecord> {
         if (!file.exists()) return emptyList()
 
         val records = mutableListOf<PpgRecord>()
-        val bytes = file.readBytes()
+        val buffer = ByteArray(BUFFER_SIZE)
+        val recordBuf = ByteArray(RECORD_SIZE)
+        var recordPos = 0
 
-        var offset = 0
-        while (offset + RECORD_SIZE <= bytes.size) {
-            val record = parseRecord(bytes, offset)
-            if (record != null) {
-                records.add(record)
+        FileInputStream(file).use { fis ->
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                var pos = 0
+                while (pos < bytesRead) {
+                    val remaining = RECORD_SIZE - recordPos
+                    val toCopy = minOf(remaining, bytesRead - pos)
+                    System.arraycopy(buffer, pos, recordBuf, recordPos, toCopy)
+                    recordPos += toCopy
+                    pos += toCopy
+
+                    if (recordPos == RECORD_SIZE) {
+                        val record = parseRecord(recordBuf, 0)
+                        if (record != null) {
+                            records.add(record)
+                        }
+                        recordPos = 0
+                    }
+                }
             }
-            offset += RECORD_SIZE
         }
 
         return records

@@ -73,3 +73,19 @@ data class DownloadResult(
     val serverCrc: String?,
     val localCrc: String
 )
+
+/**
+ * Sealed class for API operation results
+ */
+sealed class ApiResult<out T> {
+    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Error(val message: String, val cause: Exception? = null) : ApiResult<Nothing>()
+}
+
+/**
+ * Simple result for operations that return boolean
+ */
+sealed class OperationResult {
+    data object Success : OperationResult()
+    data class Error(val message: String, val cause: Exception? = null) : OperationResult()
+}

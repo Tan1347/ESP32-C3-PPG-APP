@@ -153,7 +153,8 @@ fun RemoteFileScreen(
 
             // 全部下载按钮
             if (state.fileList.isNotEmpty()) {
-                val pendingCount = state.fileList.count { file -> !state.downloadedFiles.any { it.fileName == file } }
+                val downloadedNames = remember(state.downloadedFiles) { state.downloadedFiles.map { it.fileName }.toSet() }
+                val pendingCount = state.fileList.count { file -> file !in downloadedNames }
                 OutlinedButton(
                     onClick = { viewModel.downloadFiles(state.fileList) },
                     enabled = !state.isDownloading && pendingCount > 0
@@ -199,8 +200,9 @@ fun RemoteFileScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                val downloadedNames = remember(state.downloadedFiles) { state.downloadedFiles.map { it.fileName }.toSet() }
                 items(state.fileList) { fileName ->
-                    val isDownloaded = state.downloadedFiles.any { it.fileName == fileName }
+                    val isDownloaded = fileName in downloadedNames
                     FileListItem(
                         filename = fileName,
                         isDownloaded = isDownloaded,

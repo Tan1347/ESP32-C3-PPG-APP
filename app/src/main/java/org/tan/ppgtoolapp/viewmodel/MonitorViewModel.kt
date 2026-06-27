@@ -168,29 +168,34 @@ class MonitorViewModel @Inject constructor(
         if (!bleManager.isConnected()) return false
         if (!bleManager.queryDeviceStatus()) return false
 
-        Log.d(TAG, "BLE 查询设备状态已发送")
-        delay(BLE_RESPONSE_DELAY_MS)
+        Log.d(TAG, "BLE device status query sent")
 
-        val data = bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+        // Use timeout instead of fixed delay
+        val data = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
+            delay(100)  // Small initial delay for response
+            bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+        }
         if (data == null || data.size < STATUS_DATA_SIZE) return false
 
         val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(batt_pct = data[0].toInt() and 0xFF)
         val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
         _deviceStatus.update { it.copy(battery = battery, firmwareVersion = version, isOnline = true) }
-        Log.d(TAG, "BLE 获取状态成功: battery=${battery.batt_pct}%, version=$version")
-        // 不再自动查询 SD 卡，由用户点击触发
+        Log.d(TAG, "BLE status OK: battery=${battery.batt_pct}%, version=$version")
         return true
     }
 
     private suspend fun fetchDeviceStatusHttp() {
-        val status = httpRepository.getDeviceStatus()
-        if (status != null) {
-            _deviceStatus.value = DeviceStatus(
-                battery = status.battery, firmwareVersion = status.version,
-                sdFreeMb = status.sd_free_mb, isOnline = true
-            )
-        } else {
-            _deviceStatus.update { it.copy(isOnline = false) }
+        when (val result = httpRepository.getDeviceStatus()) {
+            is ApiResult.Success -> {
+                _deviceStatus.value = DeviceStatus(
+                    battery = result.data.battery, firmwareVersion = result.data.version,
+                    sdFreeMb = result.data.sd_free_mb, isOnline = true
+                )
+            }
+            is ApiResult.Error -> {
+                Log.w(TAG, "HTTP status failed: ${result.message}")
+                _deviceStatus.update { it.copy(isOnline = false) }
+            }
         }
     }
 

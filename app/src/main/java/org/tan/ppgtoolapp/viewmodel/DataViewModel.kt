@@ -72,56 +72,19 @@ class DataViewModel @Inject constructor(
      */
     fun downloadFile(fileName: String) {
         viewModelScope.launch {
-            if (fileMetadataDao.exists(fileName)) {
-                _state.update { it.copy(error = "File already downloaded: $fileName") }
-                return@launch
-            }
-
             _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadBytes = 0, downloadTotal = 0, downloadFileName = fileName, error = null) }
-            NotificationHelper.showProgress(context, fileName.substringAfterLast("/"), 0)
 
-            try {
-                // Step 1: BLE trigger - ensure WiFi is ready and get IP
-                val ip = bleManager.triggerFileDownload()
-                if (ip == null) {
-                    _state.update { it.copy(isDownloading = false, error = "WiFi connection failed") }
-                    NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "WiFi connection failed")
-                    return@launch
-                }
-                httpRepository.setDeviceIp(ip)
+            val deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown"
 
-                // Step 2: HTTP download with MD5 verification
-                val result = httpRepository.downloadFile(fileName) { percent, downloaded, total ->
-                    _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
-                    NotificationHelper.showProgress(context, fileName.substringAfterLast("/"), percent)
-                }
-
-                if (result != null) {
-                    if (!result.crcMatch) {
-                        Log.w(TAG, "MD5 mismatch for $fileName: server=${result.serverCrc} local=${result.localCrc}")
-                        _state.update { it.copy(error = "File integrity check failed: $fileName") }
-                        result.file.delete()
-                        NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "MD5 mismatch")
-                        return@launch
-                    }
-
-                    val metadata = FileMetadata(
-                        fileName = fileName, fileSize = result.file.length(),
-                        downloadTime = System.currentTimeMillis(),
-                        deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown",
-                        localPath = result.file.absolutePath, fileType = detectFileType(fileName)
-                    )
-                    fileMetadataDao.insert(metadata)
+            when (val result = downloadManager.downloadFile(fileName, deviceMac) { percent, downloaded, total ->
+                _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
+            }) {
+                is DownloadManager.DownloadResult.Success -> {
                     loadDownloadedFiles()
-                    NotificationHelper.showComplete(context, fileName.substringAfterLast("/"))
-                    Log.d(TAG, "Downloaded: $fileName (${result.file.length()} bytes) MD5 OK")
-                } else {
-                    _state.update { it.copy(error = "Download failed: $fileName") }
-                    NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), "Download failed")
                 }
-            } catch (e: Exception) {
-                _state.update { it.copy(error = "Download error: ${e.message}") }
-                NotificationHelper.showFailed(context, fileName.substringAfterLast("/"), e.message ?: "Unknown error")
+                is DownloadManager.DownloadResult.Error -> {
+                    _state.update { it.copy(error = result.message) }
+                }
             }
 
             _state.update { it.copy(isDownloading = false, downloadProgress = 0, downloadFileName = "") }
@@ -150,7 +113,8 @@ class DataViewModel @Inject constructor(
      */
     fun downloadFiles(fileNames: List<String>) {
         viewModelScope.launch {
-            val pending = fileNames.filter { !fileMetadataDao.exists(it) }
+            val existing = fileMetadataDao.getExistingFileNames(fileNames).toSet()
+            val pending = fileNames.filter { it !in existing }
             if (pending.isEmpty()) {
                 _state.update { it.copy(error = "All files already downloaded") }
                 return@launch
