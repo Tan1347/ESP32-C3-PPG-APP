@@ -39,7 +39,8 @@ class DataViewModel @Inject constructor(
     private val bleConnection: BleConnectionProvider,
     private val bleCommander: BleCommandProvider,
     private val httpRepository: DeviceHttpApi,
-    private val fileMetadataDao: FileMetadataDao
+    private val fileMetadataDao: FileMetadataDao,
+    private val downloadManager: DownloadManager
 ) : ViewModel() {
 
     companion object {

@@ -61,6 +61,7 @@ class OtaViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val httpRepository: DeviceHttpApi,
     private val updateChecker: UpdateChecker,
+    private val otaRepository: OtaRepository,
     private val bleConnection: BleConnectionProvider,
     private val bleCommander: BleCommandProvider
 ) : ViewModel() {
@@ -75,14 +76,14 @@ class OtaViewModel @Inject constructor(
     private var extractedDir: File? = null
 
     init {
-        val repo = updateChecker.getFirmwareRepo()
+        val repo = otaRepository.getFirmwareRepo()
         _state.update { it.copy(firmwareRepo = repo) }
     }
 
-    fun getFirmwareRepo(): String = updateChecker.getFirmwareRepo()
+    fun getFirmwareRepo(): String = otaRepository.getFirmwareRepo()
 
     fun saveFirmwareRepo(repo: String) {
-        updateChecker.saveFirmwareRepo(repo)
+        otaRepository.saveFirmwareRepo(repo)
         _state.update { it.copy(firmwareRepo = repo.trim()) }
     }
 
@@ -162,7 +163,7 @@ class OtaViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val repo = _state.value.firmwareRepo.ifBlank { DEFAULT_FIRMWARE_REPO }
-                val releases = updateChecker.fetchReleases(repo)
+                val releases = otaRepository.fetchReleases(repo)
                 _state.update {
                     it.copy(
                         isLoadingReleases = false,
@@ -193,11 +194,11 @@ class OtaViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                val mirrors = updateChecker.getSortedMirrors().filter { it.isNotEmpty() }
+                val mirrors = otaRepository.getSortedMirrors().filter { it.isNotEmpty() }
                 val mirrorPrefix = mirrors.firstOrNull() ?: "https://ghfast.top/"
                 val downloadUrl = "$mirrorPrefix${release.apkUrl}"
 
-                val downloadDir = updateChecker.getDownloadDir()
+                val downloadDir = otaRepository.getDownloadDir()
                 val sevenZipFile = File(downloadDir, "firmware-${release.tagName}.7z")
 
                 val success = httpRepository.downloadFromGitHub(
@@ -215,7 +216,7 @@ class OtaViewModel @Inject constructor(
 
                 _state.update { it.copy(operation = OperationState.Extracting("Extracting...")) }
                 val extractDir = File(downloadDir, "extract-${System.currentTimeMillis()}")
-                val firmwareFile = updateChecker.extractFirmware(sevenZipFile, extractDir)
+                val firmwareFile = otaRepository.extractFirmware(sevenZipFile, extractDir)
                 sevenZipFile.delete()
 
                 if (firmwareFile != null) {
@@ -240,17 +241,17 @@ class OtaViewModel @Inject constructor(
             try {
                 _state.update { it.copy(operation = OperationState.Extracting("Processing file..."), error = null) }
 
-                val tempDir = updateChecker.getDownloadDir()
+                val tempDir = otaRepository.getDownloadDir()
                 val tempFile = File(tempDir, "local-firmware.7z")
 
-                val copied = updateChecker.copyFileFromUri(uri, tempFile)
+                val copied = otaRepository.copyFileFromUri(uri, tempFile)
                 if (!copied) {
                     _state.update { it.copy(operation = OperationState.Idle, error = "Failed to read file") }
                     return@launch
                 }
 
-                if (!updateChecker.is7zFile(tempFile)) {
-                    val fileName = updateChecker.getFileNameFromUri(uri)
+                if (!otaRepository.is7zFile(tempFile)) {
+                    val fileName = otaRepository.getFileNameFromUri(uri)
                     if (fileName != null && fileName.endsWith(".bin", ignoreCase = true)) {
                         val binFile = File(tempDir, fileName)
                         tempFile.renameTo(binFile)
@@ -266,7 +267,7 @@ class OtaViewModel @Inject constructor(
                 }
 
                 val extractDir = File(tempDir, "extract-local-${System.currentTimeMillis()}")
-                val firmwareFile = updateChecker.extractFirmware(tempFile, extractDir)
+                val firmwareFile = otaRepository.extractFirmware(tempFile, extractDir)
                 tempFile.delete()
 
                 if (firmwareFile != null) {
