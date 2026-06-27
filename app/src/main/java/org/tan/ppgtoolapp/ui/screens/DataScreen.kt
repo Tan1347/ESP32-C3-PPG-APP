@@ -196,11 +196,11 @@ fun RemoteFileScreen(
             Text("TF 卡文件 (${state.fileList.size})", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
+            val downloadedNames = remember(state.downloadedFiles) { state.downloadedFiles.map { it.fileName }.toSet() }
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val downloadedNames = remember(state.downloadedFiles) { state.downloadedFiles.map { it.fileName }.toSet() }
                 items(state.fileList) { fileName ->
                     val isDownloaded = fileName in downloadedNames
                     FileListItem(

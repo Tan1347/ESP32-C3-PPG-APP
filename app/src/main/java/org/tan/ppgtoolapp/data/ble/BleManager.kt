@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.firstNotNullOfOrNull
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -64,14 +63,13 @@ class BleManager @Inject constructor(
     @SuppressLint("MissingPermission")
     suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
         connection.connect(device, deviceName)
-        // Wait for connection state to become Connected
-        return kotlinx.coroutines.flow.firstNotNullOfOrNull { state ->
-            when (state) {
-                is ConnectionState.Connected -> true
-                is ConnectionState.Error -> false
-                else -> null
-            }
-        } ?: false
+        // Wait for connection state to become Connected or Error
+        return try {
+            val state = connection.connectionState.first { it is ConnectionState.Connected || it is ConnectionState.Error }
+            state is ConnectionState.Connected
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**
