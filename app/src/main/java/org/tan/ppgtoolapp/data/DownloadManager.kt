@@ -5,6 +5,7 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tan.ppgtoolapp.data.local.FileMetadata
 import org.tan.ppgtoolapp.data.local.FileMetadataDao
+import org.tan.ppgtoolapp.data.local.FileType
 import org.tan.ppgtoolapp.data.network.HttpRepository
 import org.tan.ppgtoolapp.util.NotificationHelper
 import javax.inject.Inject
@@ -106,12 +107,12 @@ class DownloadManager @Inject constructor(
     /**
      * Detect file type from extension
      */
-    private fun detectFileType(fileName: String): String {
+    private fun detectFileType(fileName: String): FileType {
         return when {
-            fileName.endsWith(".bin", ignoreCase = true) -> "firmware"
-            fileName.endsWith(".log", ignoreCase = true) -> "log"
-            fileName.endsWith(".csv", ignoreCase = true) -> "data"
-            else -> "unknown"
+            fileName.endsWith(".bin", ignoreCase = true) -> FileType.PPG_RAW
+            fileName.endsWith(".log", ignoreCase = true) -> FileType.LOG
+            fileName.endsWith(".csv", ignoreCase = true) -> FileType.PPG_RESULT
+            else -> FileType.UNKNOWN
         }
     }
 }
