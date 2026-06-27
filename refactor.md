@@ -1,17 +1,6 @@
 # Android App 重构清单
 
-> 待完成的重构项
-
----
-
-## 待完成（1 项）
-
-### A10. 无接口抽象，不可测试
-
-- **问题**: BleManager、HttpRepository、WifiScanner 都是具体类注入，无接口
-- **方案**: 为 Repository 层定义接口，支持 mock 测试
-- **优先级**: P3
-- **预估工作量**: 4h
+> 所有重构项已完成
 
 ---
 
@@ -24,3 +13,35 @@
 | P0 | HttpRepository 错误处理 | ✅ |
 | P2 | 通知逻辑移出 ViewModel | ✅ |
 | P2 | 导航路由类型安全 | ✅ |
+| P3 | 无接口抽象，不可测试 (A10) | ✅ |
+
+---
+
+## A10 重构详情
+
+为 BleManager、HttpRepository、WifiScanner 添加接口抽象，支持 mock 测试。
+
+### 新增接口
+
+| 接口 | 包路径 | 实现类 |
+|------|--------|--------|
+| `BleScannerProvider` | `data.ble` | BleManager |
+| `BleConnectionProvider` | `data.ble` | BleManager |
+| `BleCommandProvider` | `data.ble` | BleManager |
+| `DeviceHttpApi` | `data.network` | HttpRepository |
+| `WifiScanProvider` | `data.wifi` | WifiScanner |
+
+### Hilt 绑定
+
+`di/AppModule.kt` 通过 `@Binds` 将接口绑定到实现类。
+
+### ViewModel 依赖变更
+
+| ViewModel | 重构前 | 重构后 |
+|-----------|--------|--------|
+| DeviceVM | BleManager | BleScannerProvider + BleConnectionProvider |
+| SettingsVM | BleManager | BleCommandProvider |
+| MonitorVM | BleManager + HttpRepository | BleConnectionProvider + BleCommandProvider + DeviceHttpApi |
+| DataVM | BleManager + HttpRepository | BleConnectionProvider + BleCommandProvider + DeviceHttpApi |
+| OtaVM | BleManager + HttpRepository | BleConnectionProvider + BleCommandProvider + DeviceHttpApi |
+| WifiProvisionVM | WifiScanner + BleManager + HttpRepository | WifiScanProvider + BleCommandProvider + DeviceHttpApi |
