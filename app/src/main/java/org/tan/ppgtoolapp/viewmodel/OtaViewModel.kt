@@ -136,7 +136,6 @@ class OtaViewModel @Inject constructor(
                     _state.update { it.copy(deviceVersion = "Not connected") }
                 }
             }
-            }
         }
     }
 
@@ -293,20 +292,21 @@ class OtaViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            when (val result = httpRepository.uploadFirmware(firmwareFile) { progress ->
-                _state.update { it.copy(operation = OperationState.Uploading(progress, "Uploading... $progress%")) }
-            }) {
-                is OperationResult.Success -> {
-                    _state.update {
-                        it.copy(operation = OperationState.Idle, result = OtaResult.Success("Firmware uploaded, device will restart"))
+            try {
+                when (val result = httpRepository.uploadFirmware(firmwareFile) { progress ->
+                    _state.update { it.copy(operation = OperationState.Uploading(progress, "Uploading... $progress%")) }
+                }) {
+                    is OperationResult.Success -> {
+                        _state.update {
+                            it.copy(operation = OperationState.Idle, result = OtaResult.Success("Firmware uploaded, device will restart"))
+                        }
+                    }
+                    is OperationResult.Error -> {
+                        _state.update {
+                            it.copy(operation = OperationState.Idle, result = OtaResult.Error(result.message))
+                        }
                     }
                 }
-                is OperationResult.Error -> {
-                    _state.update {
-                        it.copy(operation = OperationState.Idle, result = OtaResult.Error(result.message))
-                    }
-                }
-            }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(operation = OperationState.Idle, result = OtaResult.Error("Upload error: ${e.message}"))
