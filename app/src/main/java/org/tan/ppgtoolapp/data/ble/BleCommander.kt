@@ -53,6 +53,7 @@ class BleCommander {
         char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 gatt.writeDescriptor(desc, android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                // writeDescriptor returns int on API 33+, but we don't need to check it here
             } else {
                 @Suppress("DEPRECATION")
                 desc.value = android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -88,7 +89,7 @@ class BleCommander {
         frame[frame.size - 1] = checksum.toByte()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            return gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == android.bluetooth.BluetoothGatt.GATT_SUCCESS
         } else {
             @Suppress("DEPRECATION")
             char.value = frame
