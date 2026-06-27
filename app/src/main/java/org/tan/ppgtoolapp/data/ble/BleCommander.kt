@@ -87,13 +87,13 @@ class BleCommander {
         }
         frame[frame.size - 1] = checksum.toByte()
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
         } else {
             @Suppress("DEPRECATION")
             char.value = frame
             @Suppress("DEPRECATION")
-            gatt.writeCharacteristic(char)
+            return gatt.writeCharacteristic(char)
         }
     }
 
