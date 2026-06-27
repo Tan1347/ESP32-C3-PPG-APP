@@ -39,11 +39,11 @@ data class WifiNetwork(
 @Singleton
 class WifiScanner @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : WifiScanProvider {
     private val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
     @SuppressLint("MissingPermission")
-    fun scan24GHz(): Flow<List<WifiNetwork>> = callbackFlow {
+    override fun scan24GHz(): Flow<List<WifiNetwork>> = callbackFlow {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) {
@@ -109,7 +109,7 @@ class WifiScanner @Inject constructor(
         return ssid.removeSurrounding("\"")
     }
 
-    fun isWifiEnabled(): Boolean = wifiManager.isWifiEnabled
+    override fun isWifiEnabled(): Boolean = wifiManager.isWifiEnabled
 
     /**
      * 请求开启 WiFi
@@ -117,7 +117,7 @@ class WifiScanner @Inject constructor(
      * @return true 如果可以直接开启，false 需要用户手动操作
      */
     @Suppress("DEPRECATION")
-    fun requestEnableWifi(): Boolean {
+    override fun requestEnableWifi(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // Android 10+ 无法直接开启，返回 false 让调用方打开系统设置面板
             false

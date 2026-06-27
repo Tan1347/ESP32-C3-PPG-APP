@@ -5,7 +5,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
 import org.tan.ppgtoolapp.data.ble.PpgGattProfile
 import org.tan.ppgtoolapp.data.network.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -58,9 +59,10 @@ sealed class OtaResult {
 @HiltViewModel
 class OtaViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val httpRepository: HttpRepository,
-    private val otaRepository: OtaRepository,
-    private val bleManager: BleManager
+    private val httpRepository: DeviceHttpApi,
+    private val updateChecker: UpdateChecker,
+    private val bleConnection: BleConnectionProvider,
+    private val bleCommander: BleCommandProvider
 ) : ViewModel() {
 
     companion object {
@@ -73,14 +75,14 @@ class OtaViewModel @Inject constructor(
     private var extractedDir: File? = null
 
     init {
-        val repo = otaRepository.getFirmwareRepo()
+        val repo = updateChecker.getFirmwareRepo()
         _state.update { it.copy(firmwareRepo = repo) }
     }
 
-    fun getFirmwareRepo(): String = otaRepository.getFirmwareRepo()
+    fun getFirmwareRepo(): String = updateChecker.getFirmwareRepo()
 
     fun saveFirmwareRepo(repo: String) {
-        otaRepository.saveFirmwareRepo(repo)
+        updateChecker.saveFirmwareRepo(repo)
         _state.update { it.copy(firmwareRepo = repo.trim()) }
     }
 
@@ -97,7 +99,7 @@ class OtaViewModel @Inject constructor(
             Log.i(TAG, "Loading device status")
 
             // Try BLE first
-            if (bleManager.isConnected()) {
+            if (bleConnection.isConnected()) {
                 val bleVersion = getVersionFromBle()
                 if (bleVersion != null) {
                     _state.update { it.copy(deviceVersion = bleVersion) }
@@ -141,7 +143,7 @@ class OtaViewModel @Inject constructor(
 
     private suspend fun getVersionFromBle(): String? {
         return try {
-            val data = bleManager.readCharacteristic(PpgGattProfile.CHAR_STATUS)
+            val data = bleCommander.readCharacteristic(PpgGattProfile.CHAR_STATUS)
             if (data != null && data.size >= 20) {
                 val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
                 if (version.isNotEmpty()) version else null
@@ -160,7 +162,7 @@ class OtaViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val repo = _state.value.firmwareRepo.ifBlank { DEFAULT_FIRMWARE_REPO }
-                val releases = otaRepository.fetchReleases(repo)
+                val releases = updateChecker.fetchReleases(repo)
                 _state.update {
                     it.copy(
                         isLoadingReleases = false,
@@ -191,11 +193,11 @@ class OtaViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                val mirrors = otaRepository.getSortedMirrors().filter { it.isNotEmpty() }
+                val mirrors = updateChecker.getSortedMirrors().filter { it.isNotEmpty() }
                 val mirrorPrefix = mirrors.firstOrNull() ?: "https://ghfast.top/"
                 val downloadUrl = "$mirrorPrefix${release.apkUrl}"
 
-                val downloadDir = otaRepository.getDownloadDir()
+                val downloadDir = updateChecker.getDownloadDir()
                 val sevenZipFile = File(downloadDir, "firmware-${release.tagName}.7z")
 
                 val success = httpRepository.downloadFromGitHub(
@@ -213,7 +215,7 @@ class OtaViewModel @Inject constructor(
 
                 _state.update { it.copy(operation = OperationState.Extracting("Extracting...")) }
                 val extractDir = File(downloadDir, "extract-${System.currentTimeMillis()}")
-                val firmwareFile = otaRepository.extractFirmware(sevenZipFile, extractDir)
+                val firmwareFile = updateChecker.extractFirmware(sevenZipFile, extractDir)
                 sevenZipFile.delete()
 
                 if (firmwareFile != null) {
@@ -238,17 +240,17 @@ class OtaViewModel @Inject constructor(
             try {
                 _state.update { it.copy(operation = OperationState.Extracting("Processing file..."), error = null) }
 
-                val tempDir = otaRepository.getDownloadDir()
+                val tempDir = updateChecker.getDownloadDir()
                 val tempFile = File(tempDir, "local-firmware.7z")
 
-                val copied = otaRepository.copyFileFromUri(uri, tempFile)
+                val copied = updateChecker.copyFileFromUri(uri, tempFile)
                 if (!copied) {
                     _state.update { it.copy(operation = OperationState.Idle, error = "Failed to read file") }
                     return@launch
                 }
 
-                if (!otaRepository.is7zFile(tempFile)) {
-                    val fileName = otaRepository.getFileNameFromUri(uri)
+                if (!updateChecker.is7zFile(tempFile)) {
+                    val fileName = updateChecker.getFileNameFromUri(uri)
                     if (fileName != null && fileName.endsWith(".bin", ignoreCase = true)) {
                         val binFile = File(tempDir, fileName)
                         tempFile.renameTo(binFile)
@@ -264,7 +266,7 @@ class OtaViewModel @Inject constructor(
                 }
 
                 val extractDir = File(tempDir, "extract-local-${System.currentTimeMillis()}")
-                val firmwareFile = otaRepository.extractFirmware(tempFile, extractDir)
+                val firmwareFile = updateChecker.extractFirmware(tempFile, extractDir)
                 tempFile.delete()
 
                 if (firmwareFile != null) {

@@ -3,11 +3,12 @@ package org.tan.ppgtoolapp.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
 import org.tan.ppgtoolapp.data.ble.ConnectionState
 import org.tan.ppgtoolapp.data.network.ApiResult
 import org.tan.ppgtoolapp.data.network.BatteryInfo
-import org.tan.ppgtoolapp.data.network.HttpRepository
+import org.tan.ppgtoolapp.data.network.DeviceHttpApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -47,8 +48,9 @@ data class DeviceStatus(
 
 @HiltViewModel
 class MonitorViewModel @Inject constructor(
-    private val bleManager: BleManager,
-    private val httpRepository: HttpRepository
+    private val bleConnection: BleConnectionProvider,
+    private val bleCommander: BleCommandProvider,
+    private val httpRepository: DeviceHttpApi
 ) : ViewModel() {
     companion object {
         private const val TAG = "MonitorViewModel"
@@ -59,10 +61,10 @@ class MonitorViewModel @Inject constructor(
         private const val BATTERY_RESPONSE_SIZE = 5
     }
 
-    val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
+    val connectionState: StateFlow<ConnectionState> = bleConnection.connectionState
 
     val isConnected: Boolean
-        get() = bleManager.connectionState.value is ConnectionState.Connected
+        get() = bleConnection.connectionState.value is ConnectionState.Connected
 
     private val _ppgData = MutableStateFlow(PpgData())
     val ppgData: StateFlow<PpgData> = _ppgData.asStateFlow()
@@ -83,7 +85,7 @@ class MonitorViewModel @Inject constructor(
     init {
         // 监听 Live Data
         viewModelScope.launch {
-            bleManager.liveData.collect { data ->
+            bleCommander.liveData.collect { data ->
                 if (data.size >= PpgDataOffset.MIN_DATA_SIZE) {
                     val hr = (data[PpgDataOffset.HR_HIGH].toInt() and 0xFF shl 8) or
                             (data[PpgDataOffset.HR_LOW].toInt() and 0xFF)
@@ -110,7 +112,7 @@ class MonitorViewModel @Inject constructor(
 
         // 监听连接状态，连接成功后自动查询一次
         viewModelScope.launch {
-            bleManager.connectionState.collect { state ->
+            bleConnection.connectionState.collect { state ->
                 if (state is ConnectionState.Connected && !hasFetchedStatus) {
                     hasFetchedStatus = true
                     Log.d(TAG, "BLE 已连接，自动查询设备状态")
@@ -124,7 +126,7 @@ class MonitorViewModel @Inject constructor(
 
     fun startMeasuring() {
         viewModelScope.launch {
-            if (bleManager.writeCommand(byteArrayOf(0x01))) {
+            if (bleCommander.writeCommand(byteArrayOf(0x01))) {
                 _isMeasuring.value = true
             } else {
                 Log.e(TAG, "Failed to send start measuring command")
@@ -134,7 +136,7 @@ class MonitorViewModel @Inject constructor(
 
     fun stopMeasuring() {
         viewModelScope.launch {
-            if (bleManager.writeCommand(byteArrayOf(0x02))) {
+            if (bleCommander.writeCommand(byteArrayOf(0x02))) {
                 _isMeasuring.value = false
             } else {
                 Log.e(TAG, "Failed to send stop measuring command")
@@ -166,15 +168,15 @@ class MonitorViewModel @Inject constructor(
     }
 
     private suspend fun fetchDeviceStatusBle(): Boolean {
-        if (!bleManager.isConnected()) return false
-        if (!bleManager.queryDeviceStatus()) return false
+        if (!bleConnection.isConnected()) return false
+        if (!bleCommander.queryDeviceStatus()) return false
 
         Log.d(TAG, "BLE device status query sent")
 
         // Use timeout instead of fixed delay
         val data = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
             delay(100)  // Small initial delay for response
-            bleManager.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+            bleCommander.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
         }
         if (data == null || data.size < STATUS_DATA_SIZE) return false
 
@@ -206,11 +208,11 @@ class MonitorViewModel @Inject constructor(
      */
     fun querySdCardStatus() {
         viewModelScope.launch {
-            if (!bleManager.isConnected()) return@launch
-            if (!bleManager.querySdCardStatus()) return@launch
+            if (!bleConnection.isConnected()) return@launch
+            if (!bleCommander.querySdCardStatus()) return@launch
             Log.d(TAG, "BLE 查询 SD 卡状态已发送")
             val resp = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
-                bleManager.cmdResponse.first { it.size >= SD_CARD_RESPONSE_SIZE && it[1] == 0x23.toByte() }
+                bleCommander.cmdResponse.first { it.size >= SD_CARD_RESPONSE_SIZE && it[1] == 0x23.toByte() }
             }
             if (resp != null) {
                 val freeMb = ((resp[3].toInt() and 0xFF) shl 8) or (resp[4].toInt() and 0xFF)
@@ -229,11 +231,11 @@ class MonitorViewModel @Inject constructor(
      */
     fun queryBatteryStatus() {
         viewModelScope.launch {
-            if (!bleManager.isConnected()) return@launch
-            if (!bleManager.queryBatteryStatus()) return@launch
+            if (!bleConnection.isConnected()) return@launch
+            if (!bleCommander.queryBatteryStatus()) return@launch
             Log.d(TAG, "BLE 查询电池状态已发送")
             val resp = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
-                bleManager.cmdResponse.first { it.size >= BATTERY_RESPONSE_SIZE && it[1] == 0x24.toByte() }
+                bleCommander.cmdResponse.first { it.size >= BATTERY_RESPONSE_SIZE && it[1] == 0x24.toByte() }
             }
             if (resp != null) {
                 val pct = resp[3].toInt() and 0xFF

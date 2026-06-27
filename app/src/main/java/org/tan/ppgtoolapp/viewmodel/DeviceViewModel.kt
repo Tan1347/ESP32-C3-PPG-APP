@@ -4,7 +4,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.tan.ppgtoolapp.data.ble.BleDevice
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleScannerProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
 import org.tan.ppgtoolapp.data.ble.ConnectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -16,10 +17,11 @@ private const val TAG = "DeviceViewModel"
 
 @HiltViewModel
 class DeviceViewModel @Inject constructor(
-    private val bleManager: BleManager
+    private val bleScanner: BleScannerProvider,
+    private val bleConnection: BleConnectionProvider
 ) : ViewModel() {
 
-    val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
+    val connectionState: StateFlow<ConnectionState> = bleConnection.connectionState
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
@@ -41,7 +43,7 @@ class DeviceViewModel @Inject constructor(
                 val updateInterval = 1000L // 1秒更新一次
 
                 // 不使用 UUID 过滤，扫描所有 BLE 设备
-                bleManager.scan(useUuidFilter = false).collect { device ->
+                bleScanner.scan(useUuidFilter = false).collect { device ->
                     val existingIndex = discoveredDevices.indexOfFirst { it.address == device.address }
                     if (existingIndex == -1) {
                         // 新设备，添加到列表
@@ -68,7 +70,7 @@ class DeviceViewModel @Inject constructor(
     fun stopScan() {
         Log.i(TAG, "停止扫描")
         _isScanning.value = false
-        bleManager.stopScan()
+        bleScanner.stopScan()
         // 停止扫描时更新一次 UI，确保所有设备都显示
         _devices.value = discoveredDevices.toList()
     }
@@ -77,9 +79,9 @@ class DeviceViewModel @Inject constructor(
         Log.i(TAG, "连接设备: ${device.name} (${device.address})")
         viewModelScope.launch {
             try {
-                val btDevice = bleManager.getBluetoothDevice(device.address)
+                val btDevice = bleScanner.getBluetoothDevice(device.address)
                 if (btDevice != null) {
-                    val success = bleManager.connect(btDevice, device.name)
+                    val success = bleConnection.connect(btDevice, device.name)
                     Log.i(TAG, "连接结果: $success")
                 } else {
                     Log.e(TAG, "无法获取 BluetoothDevice")
@@ -92,6 +94,6 @@ class DeviceViewModel @Inject constructor(
 
     fun disconnect() {
         Log.i(TAG, "断开连接")
-        bleManager.disconnect()
+        bleConnection.disconnect()
     }
 }

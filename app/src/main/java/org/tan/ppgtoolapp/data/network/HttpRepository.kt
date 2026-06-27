@@ -18,11 +18,12 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import android.util.Log
 import javax.inject.Singleton
+import org.tan.ppgtoolapp.data.network.DeviceHttpApi
 
 @Singleton
 class HttpRepository @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : DeviceHttpApi {
     companion object {
         private const val TAG = "HttpRepository"
     }
@@ -37,7 +38,7 @@ class HttpRepository @Inject constructor(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    fun setDeviceIp(ip: String) {
+    override fun setDeviceIp(ip: String) {
         currentIp = ip
         api = Retrofit.Builder()
             .baseUrl("http://$ip/")
@@ -47,9 +48,9 @@ class HttpRepository @Inject constructor(
             .create(DeviceApi::class.java)
     }
 
-    fun getDeviceIp(): String? = currentIp
+    override fun getDeviceIp(): String? = currentIp
 
-    suspend fun getFileList(): List<String> = withContext(Dispatchers.IO) {
+    override suspend fun getFileList(): List<String> = withContext(Dispatchers.IO) {
         api?.getFileList()?.files ?: emptyList()
     }
 
@@ -58,7 +59,7 @@ class HttpRepository @Inject constructor(
      * @param onProgress callback: (percent, downloadedBytes, totalBytes)
      * @return DownloadResult with file and verification status
      */
-    suspend fun downloadFile(filename: String, onProgress: ((Int, Long, Long) -> Unit)? = null): DownloadResult? = withContext(Dispatchers.IO) {
+    override suspend fun downloadFile(filename: String, onProgress: ((Int, Long, Long) -> Unit)? = null): DownloadResult? = withContext(Dispatchers.IO) {
         try {
             val response = api?.downloadFile(filename) ?: return@withContext null
             if (!response.isSuccessful) return@withContext null
@@ -113,7 +114,7 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    suspend fun getDeviceStatus(): ApiResult<DeviceStatusResponse> = withContext(Dispatchers.IO) {
+    override suspend fun getDeviceStatus(): ApiResult<DeviceStatusResponse> = withContext(Dispatchers.IO) {
         try {
             val response = api?.getStatus()
             if (response != null) ApiResult.Success(response)
@@ -124,7 +125,7 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): OperationResult = withContext(Dispatchers.IO) {
+    override suspend fun uploadFirmware(file: File, onProgress: ((Int) -> Unit)? = null): OperationResult = withContext(Dispatchers.IO) {
         try {
             val requestBody = ProgressRequestBody(file, onProgress)
             val response = api?.uploadFirmware(requestBody)
@@ -136,7 +137,7 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    suspend fun getOtaInfo(): ApiResult<OtaInfoResponse> = withContext(Dispatchers.IO) {
+    override suspend fun getOtaInfo(): ApiResult<OtaInfoResponse> = withContext(Dispatchers.IO) {
         try {
             val response = api?.getOtaInfo()
             if (response != null) ApiResult.Success(response)
@@ -147,7 +148,7 @@ class HttpRepository @Inject constructor(
         }
     }
 
-    suspend fun shutdown(): OperationResult = withContext(Dispatchers.IO) {
+    override suspend fun shutdown(): OperationResult = withContext(Dispatchers.IO) {
         try {
             api?.shutdown()
             OperationResult.Success
@@ -163,7 +164,7 @@ class HttpRepository @Inject constructor(
      * @param outputFile 保存路径
      * @param onProgress 进度回调 (0-100)
      */
-    suspend fun downloadFromGitHub(
+    override suspend fun downloadFromGitHub(
         url: String,
         outputFile: File,
         onProgress: ((Int) -> Unit)? = null

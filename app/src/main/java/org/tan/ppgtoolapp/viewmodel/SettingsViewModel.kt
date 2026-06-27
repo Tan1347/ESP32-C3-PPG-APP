@@ -3,7 +3,7 @@ package org.tan.ppgtoolapp.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
 import org.tan.ppgtoolapp.data.network.ReleaseInfo
 import org.tan.ppgtoolapp.data.network.TimeSyncHelper
 import org.tan.ppgtoolapp.data.network.UpdateChecker
@@ -41,7 +41,7 @@ data class UartRecordState(
 class SettingsViewModel @Inject constructor(
     private val updateChecker: UpdateChecker,
     private val timeSyncHelper: TimeSyncHelper,
-    private val bleManager: BleManager
+    private val bleCommander: BleCommandProvider
 ) : ViewModel() {
 
     companion object {
@@ -162,7 +162,7 @@ class SettingsViewModel @Inject constructor(
                 val timeStr = timeSyncHelper.formatTimestamp(timestamp)
 
                 // 发送到设备
-                val success = bleManager.syncTime(timestamp)
+                val success = bleCommander.syncTime(timestamp)
 
                 if (success) {
                     _timeSyncState.update {
@@ -224,7 +224,7 @@ class SettingsViewModel @Inject constructor(
             val state = _uartState.value
             Log.d(TAG, "Start UART record: baud=${state.selectedBaudRate} data=${state.selectedDataBits} parity=${state.selectedParity} stop=${state.selectedStopBits}")
 
-            val success = bleManager.startUartRecord(
+            val success = bleCommander.startUartRecord(
                 baudRate = state.selectedBaudRate,
                 dataBits = state.selectedDataBits,
                 parity = state.selectedParity,
@@ -251,7 +251,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "Stop UART record")
 
-            val success = bleManager.stopUartRecord()
+            val success = bleCommander.stopUartRecord()
             if (success) {
                 _uartState.update {
                     it.copy(isRecording = false, result = "Recording stopped")

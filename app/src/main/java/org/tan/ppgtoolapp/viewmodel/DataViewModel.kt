@@ -12,11 +12,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.tan.ppgtoolapp.data.DownloadManager
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
 import org.tan.ppgtoolapp.data.local.FileMetadata
 import org.tan.ppgtoolapp.data.local.FileMetadataDao
 import org.tan.ppgtoolapp.data.local.FileType
-import org.tan.ppgtoolapp.data.network.HttpRepository
+import org.tan.ppgtoolapp.data.network.DeviceHttpApi
 import org.tan.ppgtoolapp.util.NotificationHelper
 import javax.inject.Inject
 
@@ -35,10 +36,10 @@ data class DataState(
 @HiltViewModel
 class DataViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val bleManager: BleManager,
-    private val httpRepository: HttpRepository,
-    private val fileMetadataDao: FileMetadataDao,
-    private val downloadManager: DownloadManager
+    private val bleConnection: BleConnectionProvider,
+    private val bleCommander: BleCommandProvider,
+    private val httpRepository: DeviceHttpApi,
+    private val fileMetadataDao: FileMetadataDao
 ) : ViewModel() {
 
     companion object {
@@ -76,7 +77,7 @@ class DataViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadBytes = 0, downloadTotal = 0, downloadFileName = fileName, error = null) }
 
-            val deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown"
+            val deviceMac = bleConnection.getConnectedDeviceMac() ?: "unknown"
 
             when (val result = downloadManager.downloadFile(fileName, deviceMac) { percent, downloaded, total ->
                 _state.update { it.copy(downloadProgress = percent, downloadBytes = downloaded, downloadTotal = total) }
@@ -125,7 +126,7 @@ class DataViewModel @Inject constructor(
             _state.update { it.copy(isDownloading = true, downloadProgress = 0, downloadFileName = "0/${pending.size}", error = null) }
 
             // BLE trigger once to ensure WiFi is ready
-            val ip = bleManager.triggerFileDownload()
+            val ip = bleCommander.triggerFileDownload()
             if (ip == null) {
                 _state.update { it.copy(isDownloading = false, error = "WiFi connection failed") }
                 return@launch
@@ -149,7 +150,7 @@ class DataViewModel @Inject constructor(
                         val metadata = FileMetadata(
                             fileName = fileName, fileSize = result.file.length(),
                             downloadTime = System.currentTimeMillis(),
-                            deviceMac = bleManager.getConnectedDeviceMac() ?: "unknown",
+                            deviceMac = bleConnection.getConnectedDeviceMac() ?: "unknown",
                             localPath = result.file.absolutePath, fileType = detectFileType(fileName)
                         )
                         fileMetadataDao.insert(metadata)

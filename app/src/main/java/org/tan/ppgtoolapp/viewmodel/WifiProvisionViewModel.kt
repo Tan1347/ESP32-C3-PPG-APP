@@ -5,12 +5,12 @@ import androidx.lifecycle.viewModelScope
 import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
-import org.tan.ppgtoolapp.data.ble.BleManager
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
 import org.tan.ppgtoolapp.data.ble.PpgGattProfile
 import org.tan.ppgtoolapp.data.network.ApiResult
-import org.tan.ppgtoolapp.data.network.HttpRepository
+import org.tan.ppgtoolapp.data.network.DeviceHttpApi
 import org.tan.ppgtoolapp.data.wifi.WifiNetwork
-import org.tan.ppgtoolapp.data.wifi.WifiScanner
+import org.tan.ppgtoolapp.data.wifi.WifiScanProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -40,9 +40,9 @@ sealed class ConnectionResult {
 
 @HiltViewModel
 class WifiProvisionViewModel @Inject constructor(
-    private val wifiScanner: WifiScanner,
-    private val bleManager: BleManager,
-    private val httpRepository: HttpRepository
+    private val wifiScanner: WifiScanProvider,
+    private val bleCommander: BleCommandProvider,
+    private val httpRepository: DeviceHttpApi
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(WifiProvisionState())
@@ -137,7 +137,7 @@ class WifiProvisionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val command = buildWifiCommand(network.ssid, password)
-                val success = bleManager.writeCommand(command)
+                val success = bleCommander.writeCommand(command)
 
                 Log.i(TAG, "BLE 写入结果: $success")
 
@@ -150,7 +150,7 @@ class WifiProvisionViewModel @Inject constructor(
                     val connected = withTimeoutOrNull(30000L) {
                         for (i in 1..15) {
                             delay(2000)
-                            val data = bleManager.readCharacteristic(PpgGattProfile.CHAR_STATUS)
+                            val data = bleCommander.readCharacteristic(PpgGattProfile.CHAR_STATUS)
                             if (data != null && data.size >= 5 && data[4].toInt() and 0xFF == 1) {
                                 return@withTimeoutOrNull true
                             }
@@ -235,7 +235,7 @@ class WifiProvisionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val command = buildWifiCommand(ssid, password)
-                val success = bleManager.writeCommand(command)
+                val success = bleCommander.writeCommand(command)
 
                 Log.i(TAG, "BLE 写入结果: $success")
 

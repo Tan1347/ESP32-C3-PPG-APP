@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.first
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import org.tan.ppgtoolapp.data.ble.BleScannerProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
+import org.tan.ppgtoolapp.data.ble.BleCommandProvider
 
 /**
  * BLE Manager - facade that delegates to specialized modules
@@ -24,7 +27,7 @@ import javax.inject.Singleton
 @Suppress("DEPRECATION")
 class BleManager @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : BleScannerProvider, BleConnectionProvider, BleCommandProvider {
     companion object {
         private const val TAG = "BleManager"
     }
@@ -42,26 +45,26 @@ class BleManager @Inject constructor(
     )
 
     // Public state flows (delegated to sub-modules)
-    val connectionState: StateFlow<ConnectionState> = connection.connectionState
-    val liveData: SharedFlow<ByteArray> = commander.liveData
+    override val connectionState: StateFlow<ConnectionState> = connection.connectionState
+    override val liveData: SharedFlow<ByteArray> = commander.liveData
     val statusData: SharedFlow<ByteArray> = commander.statusData
-    val cmdResponse: SharedFlow<ByteArray> = commander.cmdResponse
+    override val cmdResponse: SharedFlow<ByteArray> = commander.cmdResponse
 
     /**
      * Scan for BLE devices
      */
-    fun scan(useUuidFilter: Boolean = false): Flow<BleDevice> = scanner.scan(useUuidFilter)
+    override fun scan(useUuidFilter: Boolean = false): Flow<BleDevice> = scanner.scan(useUuidFilter)
 
     /**
      * Stop scanning
      */
-    fun stopScan() = scanner.stopScan()
+    override fun stopScan() = scanner.stopScan()
 
     /**
      * Connect to a device
      */
     @SuppressLint("MissingPermission")
-    suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
+    override suspend fun connect(device: BluetoothDevice, deviceName: String = ""): Boolean {
         connection.connect(device, deviceName)
         // Wait for connection state to become Connected or Error
         return try {
@@ -75,63 +78,63 @@ class BleManager @Inject constructor(
     /**
      * Disconnect
      */
-    fun disconnect() = connection.disconnect()
+    override fun disconnect() = connection.disconnect()
 
     /**
      * Check if connected
      */
-    fun isConnected(): Boolean = connection.isConnected()
+    override fun isConnected(): Boolean = connection.isConnected()
 
     /**
      * Get connected device MAC
      */
-    fun getConnectedDeviceMac(): String? = connection.getConnectedDeviceMac()
+    override fun getConnectedDeviceMac(): String? = connection.getConnectedDeviceMac()
 
     /**
      * Get BluetoothDevice by address
      */
     @SuppressLint("MissingPermission")
-    fun getBluetoothDevice(address: String): BluetoothDevice? {
+    override fun getBluetoothDevice(address: String): BluetoothDevice? {
         return bluetoothAdapter?.getRemoteDevice(address)
     }
 
     /**
      * Write a command
      */
-    suspend fun writeCommand(command: ByteArray): Boolean =
+    override suspend fun writeCommand(command: ByteArray): Boolean =
         commander.writeCommand(connection.bluetoothGatt, command)
 
     /**
      * Read a characteristic
      */
-    suspend fun readCharacteristic(uuid: UUID): ByteArray? =
+    override suspend fun readCharacteristic(uuid: UUID): ByteArray? =
         commander.readCharacteristic(connection.bluetoothGatt, uuid)
 
     /**
      * Query device status
      */
-    suspend fun queryDeviceStatus(): Boolean {
+    override suspend fun queryDeviceStatus(): Boolean {
         return writeCommand(byteArrayOf(0x01))
     }
 
     /**
      * Query SD card status
      */
-    suspend fun querySdCardStatus(): Boolean {
+    override suspend fun querySdCardStatus(): Boolean {
         return writeCommand(byteArrayOf(0x23))
     }
 
     /**
      * Query battery status
      */
-    suspend fun queryBatteryStatus(): Boolean {
+    override suspend fun queryBatteryStatus(): Boolean {
         return writeCommand(byteArrayOf(0x24))
     }
 
     /**
      * Start UART recording
      */
-    suspend fun startUartRecord(baudRate: Int, dataBits: Int, parity: Int, stopBits: Int): Boolean {
+    override suspend fun startUartRecord(baudRate: Int, dataBits: Int, parity: Int, stopBits: Int): Boolean {
         val cmd = byteArrayOf(
             0x50,
             ((baudRate shr 24) and 0xFF).toByte(),
@@ -148,7 +151,7 @@ class BleManager @Inject constructor(
     /**
      * Stop UART recording
      */
-    suspend fun stopUartRecord(): Boolean {
+    override suspend fun stopUartRecord(): Boolean {
         return writeCommand(byteArrayOf(0x51))
     }
 
@@ -156,7 +159,7 @@ class BleManager @Inject constructor(
      * Sync time to device
      * @param timestamp Unix timestamp (10 digits, seconds)
      */
-    suspend fun syncTime(timestamp: Long): Boolean {
+    override suspend fun syncTime(timestamp: Long): Boolean {
         val cmd = byteArrayOf(
             0x06,
             ((timestamp shr 24) and 0xFF).toByte(),
@@ -170,7 +173,7 @@ class BleManager @Inject constructor(
     /**
      * Trigger file download
      */
-    suspend fun triggerFileDownload(): String? {
+    override suspend fun triggerFileDownload(): String? {
         if (!writeCommand(byteArrayOf(0x32))) return null
         // Wait for response with IP
         val response = kotlinx.coroutines.withTimeoutOrNull(3000L) {
