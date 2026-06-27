@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import org.tan.ppgtoolapp.data.ble.BleManager
 import org.tan.ppgtoolapp.data.ble.PpgGattProfile
+import org.tan.ppgtoolapp.data.network.ApiResult
 import org.tan.ppgtoolapp.data.network.HttpRepository
 import org.tan.ppgtoolapp.data.wifi.WifiNetwork
 import org.tan.ppgtoolapp.data.wifi.WifiScanner

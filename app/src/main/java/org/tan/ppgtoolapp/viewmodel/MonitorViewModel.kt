@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.tan.ppgtoolapp.data.ble.BleManager
 import org.tan.ppgtoolapp.data.ble.ConnectionState
+import org.tan.ppgtoolapp.data.network.ApiResult
 import org.tan.ppgtoolapp.data.network.BatteryInfo
 import org.tan.ppgtoolapp.data.network.HttpRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
