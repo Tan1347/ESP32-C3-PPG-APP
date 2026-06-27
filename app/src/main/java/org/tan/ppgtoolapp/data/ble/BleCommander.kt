@@ -2,6 +2,7 @@ package org.tan.ppgtoolapp.data.ble
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothGatt
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -50,8 +51,14 @@ class BleCommander {
         val char = service.getCharacteristic(charUuid) ?: return
         gatt.setCharacteristicNotification(char, true)
         char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
-            desc.value = android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            gatt.writeDescriptor(desc)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(desc, android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                desc.value = android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(desc)
+            }
         }
         Log.d(TAG, "Enabled notification: $label")
     }
@@ -80,8 +87,14 @@ class BleCommander {
         }
         frame[frame.size - 1] = checksum.toByte()
 
-        char.value = frame
-        return gatt.writeCharacteristic(char)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        } else {
+            @Suppress("DEPRECATION")
+            char.value = frame
+            @Suppress("DEPRECATION")
+            gatt.writeCharacteristic(char)
+        }
     }
 
     /**
