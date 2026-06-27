@@ -47,6 +47,8 @@ class HttpRepository @Inject constructor(
             .create(DeviceApi::class.java)
     }
 
+    fun getDeviceIp(): String? = currentIp
+
     suspend fun getFileList(): List<String> = withContext(Dispatchers.IO) {
         api?.getFileList()?.files ?: emptyList()
     }
