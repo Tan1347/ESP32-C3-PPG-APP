@@ -115,7 +115,7 @@ class BleManager @Inject constructor(
      * Query device status
      */
     override suspend fun queryDeviceStatus(): Boolean {
-        return writeCommand(byteArrayOf(0x01))
+        return writeCommand(byteArrayOf(0x22))
     }
 
     /**
