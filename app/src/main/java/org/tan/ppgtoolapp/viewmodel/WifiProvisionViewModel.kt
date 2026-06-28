@@ -295,6 +295,7 @@ class WifiProvisionViewModel @Inject constructor(
     /**
      * Query device WiFi status - one by one
      * Firmware sends data via Command characteristic (0xFFF3) notifications
+     * ACK frames start with 0xAA, data frames are JSON (start with '{')
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
@@ -311,8 +312,9 @@ class WifiProvisionViewModel @Inject constructor(
                 }
 
                 // Wait for WiFi list data via Command notification (0xFFF3)
+                // Skip ACK frames (start with 0xAA) and wait for JSON data
                 val listData = withTimeoutOrNull(3000L) {
-                    bleCommander.cmdResponse.first()
+                    bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
                 }
 
                 if (listData == null) {
@@ -342,7 +344,7 @@ class WifiProvisionViewModel @Inject constructor(
                     delay(200)
 
                     val detailData = withTimeoutOrNull(2000L) {
-                        bleCommander.cmdResponse.first()
+                        bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
                     }
 
                     if (detailData != null) {
