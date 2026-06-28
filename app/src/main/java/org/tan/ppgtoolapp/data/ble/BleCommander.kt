@@ -2,6 +2,9 @@ package org.tan.ppgtoolapp.data.ble
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothStatusCodes
 import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -52,11 +55,11 @@ class BleCommander {
         gatt.setCharacteristicNotification(char, true)
         char.getDescriptor(PpgGattProfile.DESCRIPTOR_CCC)?.let { desc ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeDescriptor(desc, android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                gatt.writeDescriptor(desc, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
                 // writeDescriptor returns int on API 33+, but we don't need to check it here
             } else {
                 @Suppress("DEPRECATION")
-                desc.value = android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 @Suppress("DEPRECATION")
                 gatt.writeDescriptor(desc)
             }
@@ -68,7 +71,7 @@ class BleCommander {
      * Write a command to the device
      */
     @SuppressLint("MissingPermission")
-    suspend fun writeCommand(gatt: BluetoothGatt?, command: ByteArray): Boolean {
+    fun writeCommand(gatt: BluetoothGatt?, command: ByteArray): Boolean {
         if (gatt == null) return false
         val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return false
         val char = service.getCharacteristic(PpgGattProfile.CHAR_COMMAND) ?: return false
@@ -89,7 +92,7 @@ class BleCommander {
         frame[frame.size - 1] = checksum.toByte()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return gatt.writeCharacteristic(char, frame, android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == android.bluetooth.BluetoothGatt.GATT_SUCCESS
+            return gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION")
             char.value = frame
