@@ -77,7 +77,10 @@ class BleConnection(
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     Log.i(TAG, "Services discovered")
                     // Now set Connected - services are ready
-                    _connectionState.value = ConnectionState.Connected(lastConnectedDevice, lastConnectedName)
+                    val device = lastConnectedDevice
+                    if (device != null) {
+                        _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
+                    }
                     onConnected(gatt)
                 } else {
                     Log.e(TAG, "Services discovery failed: $status")
