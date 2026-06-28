@@ -32,6 +32,11 @@ fun WifiProvisionScreen(
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
 
+    // Auto-query device WiFi status on screen entry
+    LaunchedEffect(Unit) {
+        viewModel.queryDeviceWifiStatus()
+    }
+
     // 显示错误提示
     LaunchedEffect(state.error) {
         state.error?.let {

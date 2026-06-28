@@ -3,6 +3,7 @@ package org.tan.ppgtoolapp.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import org.tan.ppgtoolapp.data.ble.BleCommandProvider
@@ -305,17 +306,22 @@ class WifiProvisionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 // Step 1: Get WiFi count from list query
+                // Set up listener BEFORE sending command to avoid race condition
+                val listDeferred = async {
+                    withTimeoutOrNull(3000L) {
+                        bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
+                    }
+                }
+
                 val listSuccess = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
                 if (!listSuccess) {
+                    listDeferred.cancel()
                     _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询失败") }
                     return@launch
                 }
 
                 // Wait for WiFi list data via Command notification (0xFFF3)
-                // Skip ACK frames (start with 0xAA) and wait for JSON data
-                val listData = withTimeoutOrNull(3000L) {
-                    bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
-                }
+                val listData = listDeferred.await()
 
                 if (listData == null) {
                     _state.update { it.copy(isQueryingDeviceWifi = false, error = "读取超时") }
@@ -336,16 +342,22 @@ class WifiProvisionViewModel @Inject constructor(
                 // Step 2: Query each WiFi details one by one
                 val networks = mutableListOf<DeviceWifiNetwork>()
                 for (i in 0 until count) {
+                    // Set up listener BEFORE sending command to avoid race condition
+                    val detailDeferred = async {
+                        withTimeoutOrNull(3000L) {
+                            bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
+                        }
+                    }
+
                     val detailSuccess = bleCommander.writeCommand(
                         byteArrayOf(PpgGattProfile.CMD_WIFI_DETAIL, i.toByte())
                     )
-                    if (!detailSuccess) break
-
-                    delay(200)
-
-                    val detailData = withTimeoutOrNull(2000L) {
-                        bleCommander.cmdResponse.first { it[0] != 0xAA.toByte() }
+                    if (!detailSuccess) {
+                        detailDeferred.cancel()
+                        break
                     }
+
+                    val detailData = detailDeferred.await()
 
                     if (detailData != null) {
                         val detailJson = String(detailData, Charsets.UTF_8)
@@ -366,9 +378,9 @@ class WifiProvisionViewModel @Inject constructor(
                             )
                         )
                         _state.update { it.copy(deviceSavedNetworks = networks.toList()) }
+                    } else {
+                        Log.w(TAG, "WiFi detail[$i] timeout")
                     }
-
-                    delay(100)
                 }
 
                 // Set global connection status from the last connected WiFi
