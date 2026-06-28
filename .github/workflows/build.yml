@@ -135,19 +135,6 @@ jobs:
           echo "📋 Release notes:"
           cat /tmp/release_body.txt
 
-      # ========== Delete old release ==========
-      - name: Delete old release if tag exists
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          RELEASE_ID=$(gh release view "$TAG" --json id -q '.id' 2>/dev/null || true)
-          if [ -n "$RELEASE_ID" ]; then
-            echo "🗑️ Deleting old release $TAG"
-            gh release delete "$TAG" --yes --cleanup-tag
-          fi
-
       # ========== Create release ==========
       - name: Create GitHub Release
         if: success()
@@ -162,18 +149,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ========== Cleanup old releases, tags, and workflow runs ==========
-      - name: Cleanup old releases and tags
-        if: success()
+  cleanup:
+    needs: build
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Cleanup old releases, tags, and workflow runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🗑️ Cleaning up old releases (keeping last 3)..."
           
-          # Get releases sorted by creation date (newest first)
           RELEASES=$(gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
           
-          # Keep only the first 3, delete the rest
           COUNT=0
           for TAG in $RELEASES; do
             COUNT=$((COUNT + 1))
@@ -183,12 +175,8 @@ jobs:
             fi
           done
           
-          echo "🗑️ Cleaning up old tags (keeping last 3)..."
-          
-          # Get tags sorted by date (newest first)
+          echo "🗑️ Cleaning up old tags..."
           TAGS=$(git tag -l "v*" --sort=-creatordate | head -20)
-          
-          # Keep only the first 3, delete the rest
           COUNT=0
           for TAG in $TAGS; do
             COUNT=$((COUNT + 1))
@@ -199,21 +187,8 @@ jobs:
             fi
           done
           
-          echo "✅ Cleanup complete"
-
-      - name: Cleanup old workflow runs
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🗑️ Cleaning up old workflow runs (keeping last 3)..."
-          
-          # Get workflow runs using API directly
-          RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100&status=completed" \
-            | jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[].id')
-          
-          # Keep only the first 3, delete the rest
+          echo "🗑️ Cleaning up old workflow runs..."
+          RUNS=$(gh run list --limit 100 --json databaseId,createdAt --jq 'sort_by(.createdAt) | reverse | .[].databaseId')
           COUNT=0
           CURRENT_RUN_ID="${{ github.run_id }}"
           for RUN_ID in $RUNS; do
@@ -224,9 +199,8 @@ jobs:
             fi
             if [ $COUNT -gt 3 ]; then
               echo "  Deleting run: $RUN_ID"
-              curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/runs/$RUN_ID" || true
+              gh run delete "$RUN_ID" --yes 2>/dev/null || true
             fi
           done
           
-          echo "✅ Workflow runs cleanup complete"
+          echo "✅ Cleanup complete"
