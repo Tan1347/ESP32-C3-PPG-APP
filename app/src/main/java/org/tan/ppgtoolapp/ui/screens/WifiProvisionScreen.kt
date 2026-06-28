@@ -301,6 +301,14 @@ private fun DeviceWifiStatusCard(
                         }
                     }
                 }
+            } else if (!isQuerying) {
+                // Show empty state when no WiFi stored
+                Text(
+                    "设备未存储 WiFi 凭据",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                )
             }
 
             Spacer(Modifier.height(8.dp))
