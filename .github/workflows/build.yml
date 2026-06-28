@@ -1,4 +1,4 @@
-name: Build Check
+name: Build & Release
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -91,3 +91,42 @@ jobs:
           else
             echo "❌ Build failed"
           fi
+
+      - name: Extract versionName from build.gradle.kts
+        id: version
+        if: success()
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          if [ -z "$VERSION" ]; then
+            echo "❌ Failed to extract versionName from build.gradle.kts"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "📌 versionName = $VERSION"
+
+      - name: Delete old release if tag exists
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          # Delete existing release (if any)
+          RELEASE_ID=$(gh release view "$TAG" --json id -q '.id' 2>/dev/null || true)
+          if [ -n "$RELEASE_ID" ]; then
+            echo "🗑️ Deleting old release $TAG (id=$RELEASE_ID)"
+            gh release delete "$TAG" --yes --cleanup-tag
+          else
+            echo "✅ No existing release for $TAG"
+          fi
+
+      - name: Create GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          files: app/build/outputs/apk/release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
