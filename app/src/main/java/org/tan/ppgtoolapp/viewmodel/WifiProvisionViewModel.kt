@@ -294,9 +294,7 @@ class WifiProvisionViewModel @Inject constructor(
 
     /**
      * Query device WiFi status - one by one
-     * 1. Query WiFi count via cmd 0x14
-     * 2. Query each WiFi details via cmd 0x15 + index
-     * 3. Unconnected WiFi returns connected=0, ip=""
+     * Firmware sends data via Command characteristic (0xFFF3) notifications
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
@@ -305,12 +303,88 @@ class WifiProvisionViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // Step 1: Get WiFi count from list response
+                // Step 1: Get WiFi count from list query
                 val listSuccess = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
                 if (!listSuccess) {
                     _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询失败") }
                     return@launch
                 }
+
+                // Wait for WiFi list data via Command notification (0xFFF3)
+                val listData = withTimeoutOrNull(3000L) {
+                    bleCommander.cmdResponse.first()
+                }
+
+                if (listData == null) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false, error = "读取超时") }
+                    return@launch
+                }
+
+                val listJson = String(listData, Charsets.UTF_8)
+                Log.d(TAG, "WiFi list: $listJson")
+
+                val listObj = org.json.JSONObject(listJson)
+                val count = listObj.optInt("count", 0)
+
+                if (count == 0) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false) }
+                    return@launch
+                }
+
+                // Step 2: Query each WiFi details one by one
+                val networks = mutableListOf<DeviceWifiNetwork>()
+                for (i in 0 until count) {
+                    val detailSuccess = bleCommander.writeCommand(
+                        byteArrayOf(PpgGattProfile.CMD_WIFI_DETAIL, i.toByte())
+                    )
+                    if (!detailSuccess) break
+
+                    delay(200)
+
+                    val detailData = withTimeoutOrNull(2000L) {
+                        bleCommander.cmdResponse.first()
+                    }
+
+                    if (detailData != null) {
+                        val detailJson = String(detailData, Charsets.UTF_8)
+                        Log.d(TAG, "WiFi[$i]: $detailJson")
+                        val detailObj = org.json.JSONObject(detailJson)
+
+                        val ssid = detailObj.optString("ssid", "")
+                        val connected = detailObj.optBoolean("connected", false)
+                        val ip = detailObj.optString("ip", "")
+
+                        networks.add(
+                            DeviceWifiNetwork(
+                                ssid = ssid,
+                                isConnected = connected,
+                                hasPassword = detailObj.optBoolean("has_pass", false),
+                                priority = detailObj.optInt("priority", 0),
+                                ip = if (connected) ip else ""
+                            )
+                        )
+                        _state.update { it.copy(deviceSavedNetworks = networks.toList()) }
+                    }
+
+                    delay(100)
+                }
+
+                // Set global connection status from the last connected WiFi
+                val connectedNetwork = networks.firstOrNull { it.isConnected }
+                _state.update {
+                    it.copy(
+                        deviceWifiConnected = connectedNetwork != null,
+                        deviceWifiIp = connectedNetwork?.ip ?: ""
+                    )
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Query device WiFi failed: ${e.message}")
+            } finally {
+                _state.update { it.copy(isQueryingDeviceWifi = false) }
+            }
+        }
+    }
                 delay(200)
 
                 val listData = withTimeoutOrNull(3000L) {

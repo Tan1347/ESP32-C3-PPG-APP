@@ -17,7 +17,8 @@ class BleConnection(
     private val context: Context,
     private val onConnected: (BluetoothGatt) -> Unit,
     private val onDisconnected: () -> Unit,
-    private val onCharacteristicChanged: (java.util.UUID, ByteArray?) -> Unit = { _, _ -> }
+    private val onCharacteristicChanged: (java.util.UUID, ByteArray?) -> Unit = { _, _ -> },
+    private val onCharacteristicRead: (java.util.UUID, ByteArray?) -> Unit = { _, _ -> }
 ) {
     companion object {
         private const val TAG = "BleConnection"
@@ -107,6 +108,16 @@ class BleConnection(
             override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray) {
                 Log.d(TAG, "onCharacteristicChanged: uuid=${characteristic.uuid}")
                 onCharacteristicChanged(characteristic.uuid, value)
+            }
+
+            override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+                Log.d(TAG, "onCharacteristicRead: uuid=${characteristic.uuid} status=$status")
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    onCharacteristicRead(characteristic.uuid, value)
+                } else {
+                    Log.e(TAG, "onCharacteristicRead failed: status=$status")
+                    onCharacteristicRead(characteristic.uuid, null)
+                }
             }
         })
     }
@@ -198,6 +209,15 @@ class BleConnection(
 
                         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray) {
                             onCharacteristicChanged(characteristic.uuid, value)
+                        }
+
+                        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+                            Log.d(TAG, "Reconnect onCharacteristicRead: uuid=${characteristic.uuid} status=$status")
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                onCharacteristicRead(characteristic.uuid, value)
+                            } else {
+                                onCharacteristicRead(characteristic.uuid, null)
+                            }
                         }
                     })
                 } catch (e: Exception) {

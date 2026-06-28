@@ -42,7 +42,8 @@ class BleManager @Inject constructor(
         context = context,
         onConnected = { gatt -> commander.enableNotifications(gatt) },
         onDisconnected = { /* handled by connection module */ },
-        onCharacteristicChanged = { uuid, value -> commander.handleCharacteristicChanged(uuid, value) }
+        onCharacteristicChanged = { uuid, value -> commander.handleCharacteristicChanged(uuid, value) },
+        onCharacteristicRead = { uuid, value -> commander.handleCharacteristicRead(uuid, value) }
     )
 
     // Public state flows (delegated to sub-modules)

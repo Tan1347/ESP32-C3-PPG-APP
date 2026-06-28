@@ -126,21 +126,24 @@ Status codes: 0=OK, 1=cancelled, 2=checksum error, 3=unknown command, 4=low batt
 
 #### 4.1 Measurement Control
 
-| Command | Bytes | Description |
-|---------|-------|-------------|
-| Start measurement | `[0x01]` | Start PPG sampling, begin sending Live Data |
-| Stop measurement | `[0x02]` | Stop sampling |
+| Command | CMD | Description | Response |
+|---------|-----|-------------|----------|
+| Start measurement | `0x01` | Start PPG sampling | OK via 0xFFF3 |
+| Stop measurement | `0x02` | Stop sampling | OK via 0xFFF3 |
 
 #### 4.2 WiFi Management
 
-| Command | Bytes | Description |
-|---------|-------|-------------|
-| Start WiFi | `[0x03]` | Connect to saved router |
-| Add WiFi | `[0x10] + data` | Send WiFi credentials |
-| WiFi status | `[0x11]` | Query WiFi connection status |
-| Clear WiFi | `[0x12]` | Clear all saved WiFi |
-| Delete WiFi | `[0x13] + index` | Delete WiFi by index |
-| WiFi list | `[0x14]` | Get saved WiFi list |
+| Command | CMD | Description | Response | Data Return |
+|---------|-----|-------------|----------|-------------|
+| Start WiFi | `0x03` | Connect to saved router | OK via 0xFFF3 | - |
+| Add WiFi | `0x10` + data | Send WiFi credentials | OK via 0xFFF3 | - |
+| WiFi status | `0x11` | Query WiFi connection status | OK via 0xFFF3 | - |
+| Clear WiFi | `0x12` | Clear all saved WiFi | OK via 0xFFF3 | - |
+| Delete WiFi | `0x13` + index | Delete WiFi by index | OK via 0xFFF3 | - |
+| **WiFi list** | `0x14` | Get saved WiFi list | OK via 0xFFF3 | **JSON via 0xFFF3 notification** |
+| **WiFi detail** | `0x15` + index | Get WiFi details by index | OK via 0xFFF3 | **JSON via 0xFFF3 notification** |
+
+**Important**: WiFi data is returned via Command characteristic (0xFFF3) notifications, NOT File List (0xFFF4).
 
 **Add WiFi command format (0x10)**:
 
@@ -171,6 +174,35 @@ Payload (20 bytes):
 
 Note: The outer writeCommand() wraps with [0xAA][LEN][...][CHECKSUM]
 ```
+
+**WiFi detail query format (0x15)**:
+
+```
+Frame: [0x15] [INDEX]
+Bytes:  1       1
+```
+
+| Field | Offset | Length | Type | Description |
+|-------|--------|--------|------|-------------|
+| CMD | 0 | 1 | uint8 | Command ID: 0x15 |
+| INDEX | 1 | 1 | uint8 | WiFi index (0-based) |
+
+**Response** (via 0xFFF3 notification):
+```json
+{
+  "idx": 0,
+  "ssid": "MyWiFi",
+  "has_pass": true,
+  "priority": 0,
+  "rssi": -45,
+  "fails": 0,
+  "connected": true,
+  "ip": "192.168.1.100"
+}
+```
+
+- `connected`: true if this WiFi is currently connected, false otherwise
+- `ip`: IP address if connected, empty string if not connected
 
 **WiFi provisioning modes**:
 
