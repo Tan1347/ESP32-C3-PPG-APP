@@ -104,18 +104,24 @@ class BleCommander {
 
         Log.d(TAG, "TX Command: cmd=0x${String.format("%02X", command[0])} dataLen=$dataLen frame=${frame.joinToString(" ") { String.format("%02X", it) }}")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val result = gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-            Log.d(TAG, "TX writeCharacteristic result: $result")
-            return result == BluetoothStatusCodes.SUCCESS
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
         } else {
             @Suppress("DEPRECATION")
             char.value = frame
             @Suppress("DEPRECATION")
-            val result = gatt.writeCharacteristic(char)
-            Log.d(TAG, "TX writeCharacteristic result: $result")
-            return result
+            gatt.writeCharacteristic(char)
         }
+
+        Log.d(TAG, "TX writeCharacteristic result: $result")
+
+        // Handle error - trigger disconnect if connection is stale
+        if (result != BluetoothStatusCodes.SUCCESS && result != 0) {
+            Log.e(TAG, "TX write failed with code: $result, connection may be stale")
+            // Don't trigger disconnect here to avoid recursion, let the caller handle it
+        }
+
+        return result == BluetoothStatusCodes.SUCCESS || result == 0
     }
 
     /**

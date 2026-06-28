@@ -108,7 +108,13 @@ class BleManager @Inject constructor(
             Log.w(TAG, "writeCommand: not connected")
             return false
         }
-        return commander.writeCommand(gatt, command)
+        val success = commander.writeCommand(gatt, command)
+        if (!success) {
+            // Write failed, connection may be stale - trigger disconnect
+            Log.w(TAG, "writeCommand failed, triggering disconnect")
+            connection.disconnect()
+        }
+        return success
     }
 
     /**
