@@ -204,39 +204,6 @@ class MonitorViewModel @Inject constructor(
         _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = battPct), firmwareVersion = version, isOnline = true) }
         return true
     }
-        Log.d(TAG, "fetchDeviceStatusBle: sending queryDeviceStatus command")
-        if (!bleCommander.queryDeviceStatus()) {
-            Log.e(TAG, "fetchDeviceStatusBle: queryDeviceStatus failed")
-            return false
-        }
-
-        Log.d(TAG, "fetchDeviceStatusBle: command sent, waiting for statusData notification")
-
-        /* Wait for status notification from device (sent after query) */
-        val data = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
-            delay(100)  // Small initial delay for BLE processing
-            Log.d(TAG, "fetchDeviceStatusBle: calling statusData.first()")
-            bleCommander.statusData.first()
-        }
-        if (data == null) {
-            Log.w(TAG, "fetchDeviceStatusBle: TIMEOUT waiting for statusData (${BLE_QUERY_TIMEOUT_MS}ms)")
-            return false
-        }
-        if (data.size < STATUS_DATA_SIZE) {
-            Log.w(TAG, "fetchDeviceStatusBle: data too small (${data.size} < $STATUS_DATA_SIZE)")
-            return false
-        }
-
-        val battPct = data[0].toInt() and 0xFF
-        val voltageHigh = data[1].toInt() and 0xFF
-        val voltageLow = data[2].toInt() and 0xFF
-        val voltageX100 = (voltageHigh shl 8) or voltageLow
-        val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
-        Log.d(TAG, "fetchDeviceStatusBle: batt=$battPct% voltage=$voltageX100 version=$version")
-        Log.d(TAG, "fetchDeviceStatusBle: raw data=${data.joinToString(" ") { String.format("%02X", it) }}")
-        _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = battPct), firmwareVersion = version, isOnline = true) }
-        return true
-    }
 
     private suspend fun fetchDeviceStatusHttp() {
         when (val result = httpRepository.getDeviceStatus()) {
