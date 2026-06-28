@@ -34,6 +34,9 @@ class BleCommander {
     private val _cmdResponse = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
     val cmdResponse: SharedFlow<ByteArray> = _cmdResponse.asSharedFlow()
 
+    private val _fileListData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16, replay = 1)
+    val fileListData: SharedFlow<ByteArray> = _fileListData.asSharedFlow()
+
     private val pendingReadLock = Any()
     @Volatile private var pendingReadUuid: UUID? = null
     @Volatile private var pendingReadContinuation: kotlin.coroutines.Continuation<ByteArray?>? = null
@@ -192,6 +195,9 @@ class BleCommander {
             }
             PpgGattProfile.CHAR_COMMAND -> {
                 value?.let { _cmdResponse.tryEmit(it) }
+            }
+            PpgGattProfile.CHAR_FILE_LIST -> {
+                value?.let { _fileListData.tryEmit(it) }
             }
         }
     }

@@ -50,6 +50,7 @@ class BleManager @Inject constructor(
     override val liveData: SharedFlow<ByteArray> = commander.liveData
     override val statusData: SharedFlow<ByteArray> = commander.statusData
     override val cmdResponse: SharedFlow<ByteArray> = commander.cmdResponse
+    override val fileListData: SharedFlow<ByteArray> = commander.fileListData
 
     /**
      * Scan for BLE devices

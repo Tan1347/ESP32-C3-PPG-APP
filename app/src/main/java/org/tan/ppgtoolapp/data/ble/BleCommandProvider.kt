@@ -10,6 +10,7 @@ interface BleCommandProvider {
     val liveData: SharedFlow<ByteArray>
     val statusData: SharedFlow<ByteArray>
     val cmdResponse: SharedFlow<ByteArray>
+    val fileListData: SharedFlow<ByteArray>
     suspend fun writeCommand(command: ByteArray): Boolean
     suspend fun readCharacteristic(uuid: UUID): ByteArray?
     suspend fun queryDeviceStatus(): Boolean

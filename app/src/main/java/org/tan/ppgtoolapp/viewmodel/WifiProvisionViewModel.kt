@@ -293,6 +293,7 @@ class WifiProvisionViewModel @Inject constructor(
 
     /**
      * Query device WiFi status (saved networks, connection status, IP)
+     * Firmware sends JSON via notification on CHAR_FILE_LIST (0xFFF4)
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
@@ -308,9 +309,10 @@ class WifiProvisionViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Wait for response on File List characteristic
+                // Wait for notification on CHAR_FILE_LIST (0xFFF4)
+                // Firmware sends JSON via notification on this characteristic
                 val response = withTimeoutOrNull(3000L) {
-                    bleCommander.cmdResponse.first()
+                    bleCommander.fileListData.first()
                 }
 
                 if (response != null) {
@@ -318,13 +320,8 @@ class WifiProvisionViewModel @Inject constructor(
                     Log.d(TAG, "Device WiFi status: $json")
                     parseDeviceWifiStatus(json)
                 } else {
-                    // Try reading directly from File List characteristic
-                    val data = bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
-                    if (data != null) {
-                        val json = String(data, Charsets.UTF_8)
-                        Log.d(TAG, "Device WiFi list: $json")
-                        parseDeviceWifiStatus(json)
-                    }
+                    Log.w(TAG, "Timeout waiting for WiFi status response")
+                    _state.update { it.copy(error = "查询超时") }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Query device WiFi failed: ${e.message}")
