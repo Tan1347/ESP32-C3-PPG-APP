@@ -35,6 +35,16 @@ fun DeviceScreen(
     val devices by viewModel.devices.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
 
+    // Track previous connection state to detect disconnect
+    var wasConnected by remember { mutableStateOf(false) }
+    LaunchedEffect(connectionState) {
+        val currentlyConnected = connectionState is ConnectionState.Connected
+        if (wasConnected && !currentlyConnected) {
+            android.widget.Toast.makeText(context, "设备连接已断开", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        wasConnected = currentlyConnected
+    }
+
     // 权限请求
     val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(

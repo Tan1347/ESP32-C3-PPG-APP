@@ -1,5 +1,6 @@
 package org.tan.ppgtoolapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,11 +33,22 @@ fun MonitorScreen(
     viewModel: MonitorViewModel = hiltViewModel(),
     onNavigateToDevice: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val ppgData by viewModel.ppgData.collectAsState()
     val isMeasuring by viewModel.isMeasuring.collectAsState()
     val deviceStatus by viewModel.deviceStatus.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
+
+    // Track previous connection state to detect disconnect
+    var wasConnected by remember { mutableStateOf(false) }
+    LaunchedEffect(connectionState) {
+        val currentlyConnected = connectionState is ConnectionState.Connected
+        if (wasConnected && !currentlyConnected) {
+            Toast.makeText(context, "设备连接已断开", Toast.LENGTH_SHORT).show()
+        }
+        wasConnected = currentlyConnected
+    }
 
     Column(
         modifier = Modifier
