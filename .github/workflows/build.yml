@@ -208,16 +208,24 @@ jobs:
         run: |
           echo "🗑️ Cleaning up old workflow runs (keeping last 3)..."
           
-          # Get workflow runs for this workflow
-          RUNS=$(gh run list --workflow=build.yml --limit 100 --json databaseId,createdAt --jq 'sort_by(.createdAt) | reverse | .[].databaseId')
+          # Get workflow runs using API directly
+          RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100&status=completed" \
+            | jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[].id')
           
           # Keep only the first 3, delete the rest
           COUNT=0
+          CURRENT_RUN_ID="${{ github.run_id }}"
           for RUN_ID in $RUNS; do
             COUNT=$((COUNT + 1))
+            if [ "$RUN_ID" = "$CURRENT_RUN_ID" ]; then
+              echo "  Skipping current run: $RUN_ID"
+              continue
+            fi
             if [ $COUNT -gt 3 ]; then
               echo "  Deleting run: $RUN_ID"
-              gh run delete "$RUN_ID" --yes 2>/dev/null || true
+              curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/actions/runs/$RUN_ID" || true
             fi
           done
           
