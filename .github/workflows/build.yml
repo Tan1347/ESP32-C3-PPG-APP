@@ -164,34 +164,42 @@ jobs:
       - name: Cleanup old releases, tags, and workflow runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           echo "🗑️ Cleaning up old releases (keeping last 3)..."
           
-          RELEASES=$(gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
+          # Delete old releases via API
+          RELEASES=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq -r 'sort_by(.created_at) | reverse | .[].tag_name')
           
           COUNT=0
           for TAG in $RELEASES; do
             COUNT=$((COUNT + 1))
             if [ $COUNT -gt 3 ]; then
               echo "  Deleting release: $TAG"
-              gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+              # Get release ID
+              REL_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" | jq -r '.id')
+              if [ -n "$REL_ID" ] && [ "$REL_ID" != "null" ]; then
+                curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$REL_ID"
+                # Delete associated tag
+                curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG"
+              fi
             fi
           done
           
-          echo "🗑️ Cleaning up old tags..."
-          TAGS=$(git tag -l "v*" --sort=-creatordate | head -20)
-          COUNT=0
-          for TAG in $TAGS; do
-            COUNT=$((COUNT + 1))
-            if [ $COUNT -gt 3 ]; then
-              echo "  Deleting tag: $TAG"
-              git push origin --delete "$TAG" 2>/dev/null || true
-              git tag -d "$TAG" 2>/dev/null || true
-            fi
-          done
+          echo "🗑️ Cleaning up old workflow runs (keeping last 3)..."
           
-          echo "🗑️ Cleaning up old workflow runs..."
-          RUNS=$(gh run list --limit 100 --json databaseId,createdAt --jq 'sort_by(.createdAt) | reverse | .[].databaseId')
+          # Get workflow runs via API
+          RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100&status=completed" \
+            | jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[].id')
+          
           COUNT=0
           CURRENT_RUN_ID="${{ github.run_id }}"
           for RUN_ID in $RUNS; do
@@ -202,7 +210,8 @@ jobs:
             fi
             if [ $COUNT -gt 3 ]; then
               echo "  Deleting run: $RUN_ID"
-              gh run delete "$RUN_ID" --yes 2>/dev/null || true
+              curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
             fi
           done
           
