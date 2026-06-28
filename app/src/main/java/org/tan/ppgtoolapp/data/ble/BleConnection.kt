@@ -57,7 +57,8 @@ class BleConnection(
                         Log.i(TAG, "Connected: $deviceName (${device.address})")
                         bluetoothGatt = gatt
                         reconnectAttempt = 0
-                        _connectionState.value = ConnectionState.Connected(device, deviceName)
+                        // Don't set Connected yet - wait for services discovered
+                        _connectionState.value = ConnectionState.Connecting
                         gatt.discoverServices()
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
@@ -75,7 +76,13 @@ class BleConnection(
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     Log.i(TAG, "Services discovered")
+                    // Now set Connected - services are ready
+                    _connectionState.value = ConnectionState.Connected(lastConnectedDevice, lastConnectedName)
                     onConnected(gatt)
+                } else {
+                    Log.e(TAG, "Services discovery failed: $status")
+                    // Discovery failed, disconnect
+                    gatt.disconnect()
                 }
             }
 
@@ -143,7 +150,8 @@ class BleConnection(
                                     bluetoothGatt = gatt
                                     isAutoReconnecting = false
                                     reconnectAttempt = 0
-                                    _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
+                                    // Don't set Connected yet - wait for services discovered
+                                    _connectionState.value = ConnectionState.Connecting
                                     gatt.discoverServices()
                                 }
                                 BluetoothProfile.STATE_DISCONNECTED -> {
@@ -157,7 +165,11 @@ class BleConnection(
                         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                             if (status == BluetoothGatt.GATT_SUCCESS) {
                                 Log.i(TAG, "Reconnect services discovered")
+                                _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
                                 onConnected(gatt)
+                            } else {
+                                Log.e(TAG, "Reconnect services discovery failed: $status")
+                                gatt.disconnect()
                             }
                         }
 
