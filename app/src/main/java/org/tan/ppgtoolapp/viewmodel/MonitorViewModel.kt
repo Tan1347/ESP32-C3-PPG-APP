@@ -180,10 +180,13 @@ class MonitorViewModel @Inject constructor(
         }
         if (data == null || data.size < STATUS_DATA_SIZE) return false
 
-        val battery = org.tan.ppgtoolapp.data.network.BatteryInfo(batt_pct = data[0].toInt() and 0xFF)
+        val battPct = data[0].toInt() and 0xFF
+        val voltageHigh = data[1].toInt() and 0xFF
+        val voltageLow = data[2].toInt() and 0xFF
+        val voltageX100 = (voltageHigh shl 8) or voltageLow
         val version = String(data.copyOfRange(5, 20), Charsets.UTF_8).trim()
-        _deviceStatus.update { it.copy(battery = battery, firmwareVersion = version, isOnline = true) }
-        Log.d(TAG, "BLE status OK: battery=${battery.batt_pct}%, version=$version")
+        _deviceStatus.update { it.copy(battery = BatteryInfo(batt_pct = battPct), firmwareVersion = version, isOnline = true) }
+        Log.d(TAG, "BLE status OK: battery=${battPct}%, voltage=${voltageX100}, version=$version")
         return true
     }
 
