@@ -65,33 +65,37 @@ jobs:
           GRADLE_VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           echo "Gradle version: $GRADLE_VERSION"
           
-          # Get the last released version from git tags
-          LAST_RELEASED=$(git tag -l "v*" --sort=-version:refname | head -1 | sed 's/^v//')
+          # Get the last released version from git tags (strip v prefix and commit hash)
+          LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -1)
+          LAST_RELEASED=$(echo "$LAST_TAG" | sed 's/^v//' | sed 's/-.*//')
           echo "Last released: ${LAST_RELEASED:-none}"
           
-          # Parse versions
-          IFS='.' read -r G_MAJOR G_MINOR G_PATCH <<< "$GRADLE_VERSION"
+          # Parse versions using cut (sh-compatible)
+          G_MAJOR=$(echo "$GRADLE_VERSION" | cut -d. -f1)
+          G_MINOR=$(echo "$GRADLE_VERSION" | cut -d. -f2)
+          G_PATCH=$(echo "$GRADLE_VERSION" | cut -d. -f3)
           
-          if [ -n "$LAST_RELEASED" ]; then
-            IFS='.' read -r L_MAJOR L_MINOR L_PATCH <<< "$LAST_RELEASED"
+          if [ -n "$LAST_RELEASED" ] && echo "$LAST_RELEASED" | grep -q '^[0-9]'; then
+            L_MAJOR=$(echo "$LAST_RELEASED" | cut -d. -f1)
+            L_MINOR=$(echo "$LAST_RELEASED" | cut -d. -f2)
+            L_PATCH=$(echo "$LAST_RELEASED" | cut -d. -f3)
           else
             L_MAJOR=0; L_MINOR=0; L_PATCH=0
           fi
           
-          # Decision logic:
-          # If user changed MAJOR or MINOR in build.gradle.kts, use that version
-          # If only PATCH changed or same, auto-increment patch
+          echo "Parsed: gradle=${G_MAJOR}.${G_MINOR}.${G_PATCH} last=${L_MAJOR}.${L_MINOR}.${L_PATCH}"
           
-          if [ "$G_MAJOR" -gt "$L_MAJOR" ] || [ "$G_MINOR" -gt "$L_MINOR" ]; then
-            # User bumped major or minor version manually
+          # Decision logic
+          if [ -z "$GRADLE_VERSION" ] || [ "$GRADLE_VERSION" = "" ]; then
+            echo "❌ versionName is empty in build.gradle.kts"
+            exit 1
+          elif [ "$G_MAJOR" -gt "$L_MAJOR" ] 2>/dev/null || [ "$G_MINOR" -gt "$L_MINOR" ] 2>/dev/null; then
             NEW_VERSION="$GRADLE_VERSION"
-            echo "📌 User bumped to major/minor: $NEW_VERSION"
-          elif [ "$G_PATCH" -gt "$L_PATCH" ]; then
-            # User bumped patch manually, use it
+            echo "📌 User bumped major/minor: $NEW_VERSION"
+          elif [ "$G_PATCH" -gt "$L_PATCH" ] 2>/dev/null; then
             NEW_VERSION="$GRADLE_VERSION"
             echo "📌 User bumped patch: $NEW_VERSION"
           else
-            # Auto-increment patch
             NEW_PATCH=$((L_PATCH + 1))
             NEW_VERSION="${L_MAJOR}.${L_MINOR}.${NEW_PATCH}"
             echo "📌 Auto-incremented: $NEW_VERSION"
@@ -99,9 +103,6 @@ jobs:
           
           # Save to outputs
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "major=$(echo $NEW_VERSION | cut -d. -f1)" >> $GITHUB_OUTPUT
-          echo "minor=$(echo $NEW_VERSION | cut -d. -f2)" >> $GITHUB_OUTPUT
-          echo "patch=$(echo $NEW_VERSION | cut -d. -f3)" >> $GITHUB_OUTPUT
           
           # Update build.gradle.kts with new version
           sed -i "s/versionName = \".*\"/versionName = \"$NEW_VERSION\"/" app/build.gradle.kts
