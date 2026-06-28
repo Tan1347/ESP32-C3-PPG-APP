@@ -72,9 +72,18 @@ class BleCommander {
      */
     @SuppressLint("MissingPermission")
     fun writeCommand(gatt: BluetoothGatt?, command: ByteArray): Boolean {
-        if (gatt == null) return false
-        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return false
-        val char = service.getCharacteristic(PpgGattProfile.CHAR_COMMAND) ?: return false
+        if (gatt == null) {
+            Log.e(TAG, "writeCommand: gatt is null")
+            return false
+        }
+        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: run {
+            Log.e(TAG, "writeCommand: service not found")
+            return false
+        }
+        val char = service.getCharacteristic(PpgGattProfile.CHAR_COMMAND) ?: run {
+            Log.e(TAG, "writeCommand: characteristic not found")
+            return false
+        }
 
         // Build frame: [0xAA][CMD][LEN][DATA...][CHECKSUM]
         // command = [CMD][DATA...], LEN = data length only (excluding CMD)
@@ -93,13 +102,19 @@ class BleCommander {
         }
         frame[frame.size - 1] = checksum.toByte()
 
+        Log.d(TAG, "TX Command: cmd=0x${String.format("%02X", command[0])} dataLen=$dataLen frame=${frame.joinToString(" ") { String.format("%02X", it) }}")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
+            val result = gatt.writeCharacteristic(char, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+            Log.d(TAG, "TX writeCharacteristic result: $result")
+            return result == BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION")
             char.value = frame
             @Suppress("DEPRECATION")
-            return gatt.writeCharacteristic(char)
+            val result = gatt.writeCharacteristic(char)
+            Log.d(TAG, "TX writeCharacteristic result: $result")
+            return result
         }
     }
 
@@ -108,10 +123,20 @@ class BleCommander {
      */
     @SuppressLint("MissingPermission")
     suspend fun readCharacteristic(gatt: BluetoothGatt?, uuid: UUID): ByteArray? {
-        if (gatt == null) return null
-        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: return null
-        val char = service.getCharacteristic(uuid) ?: return null
+        if (gatt == null) {
+            Log.e(TAG, "readCharacteristic: gatt is null")
+            return null
+        }
+        val service = gatt.getService(PpgGattProfile.SERVICE_UUID) ?: run {
+            Log.e(TAG, "readCharacteristic: service not found for uuid=$uuid")
+            return null
+        }
+        val char = service.getCharacteristic(uuid) ?: run {
+            Log.e(TAG, "readCharacteristic: characteristic not found for uuid=$uuid")
+            return null
+        }
 
+        Log.d(TAG, "RX Read request: uuid=$uuid")
         return withTimeoutOrNull(READ_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
                 synchronized(pendingReadLock) {
@@ -134,12 +159,15 @@ class BleCommander {
      * Handle characteristic read callback
      */
     fun handleCharacteristicRead(uuid: UUID, value: ByteArray?) {
+        Log.d(TAG, "RX Read response: uuid=$uuid value=${value?.joinToString(" ") { String.format("%02X", it) }}")
         synchronized(pendingReadLock) {
             if (uuid == pendingReadUuid && pendingReadContinuation != null) {
                 val cont = pendingReadContinuation
                 pendingReadContinuation = null
                 pendingReadUuid = null
                 cont?.resume(value)
+            } else {
+                Log.w(TAG, "RX Read: no pending continuation for uuid=$uuid")
             }
         }
     }
@@ -148,6 +176,7 @@ class BleCommander {
      * Handle characteristic changed callback
      */
     fun handleCharacteristicChanged(uuid: UUID, value: ByteArray?) {
+        Log.d(TAG, "RX Notification: uuid=$uuid len=${value?.size} value=${value?.joinToString(" ") { String.format("%02X", it) }}")
         when (uuid) {
             PpgGattProfile.CHAR_LIVE_DATA -> {
                 value?.let { _liveData.tryEmit(it) }
