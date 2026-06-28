@@ -173,10 +173,10 @@ class MonitorViewModel @Inject constructor(
 
         Log.d(TAG, "BLE device status query sent")
 
-        // Use timeout instead of fixed delay
+        /* Wait for status notification from device (sent after query) */
         val data = withTimeoutOrNull(BLE_QUERY_TIMEOUT_MS) {
-            delay(100)  // Small initial delay for response
-            bleCommander.readCharacteristic(org.tan.ppgtoolapp.data.ble.PpgGattProfile.CHAR_STATUS)
+            delay(100)  // Small initial delay for BLE processing
+            bleCommander.statusData.first()
         }
         if (data == null || data.size < STATUS_DATA_SIZE) return false
 

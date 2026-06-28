@@ -8,6 +8,7 @@ import java.util.UUID
  */
 interface BleCommandProvider {
     val liveData: SharedFlow<ByteArray>
+    val statusData: SharedFlow<ByteArray>
     val cmdResponse: SharedFlow<ByteArray>
     suspend fun writeCommand(command: ByteArray): Boolean
     suspend fun readCharacteristic(uuid: UUID): ByteArray?
