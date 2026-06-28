@@ -16,7 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class BleConnection(
     private val context: Context,
     private val onConnected: (BluetoothGatt) -> Unit,
-    private val onDisconnected: () -> Unit
+    private val onDisconnected: () -> Unit,
+    private val onCharacteristicChanged: (java.util.UUID, ByteArray?) -> Unit = { _, _ -> }
 ) {
     companion object {
         private const val TAG = "BleConnection"
@@ -76,6 +77,11 @@ class BleConnection(
                     Log.i(TAG, "Services discovered")
                     onConnected(gatt)
                 }
+            }
+
+            override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray) {
+                Log.d(TAG, "onCharacteristicChanged: uuid=${characteristic.uuid}")
+                onCharacteristicChanged(characteristic.uuid, value)
             }
         })
     }
@@ -153,6 +159,10 @@ class BleConnection(
                                 Log.i(TAG, "Reconnect services discovered")
                                 onConnected(gatt)
                             }
+                        }
+
+                        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray) {
+                            onCharacteristicChanged(characteristic.uuid, value)
                         }
                     })
                 } catch (e: Exception) {
