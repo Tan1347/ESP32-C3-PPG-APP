@@ -76,16 +76,31 @@ class BleConnection(
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     Log.i(TAG, "Services discovered")
-                    // Now set Connected - services are ready
+                    // Request larger MTU for bigger data transfers
+                    gatt.requestMtu(247)  // BLE 5.0 max is 512, 247 is safe for most devices
+                } else {
+                    Log.e(TAG, "Services discovery failed: $status")
+                    gatt.disconnect()
+                }
+            }
+
+            override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    Log.i(TAG, "MTU negotiated: $mtu bytes")
+                    // Now set Connected - services and MTU are ready
                     val device = lastConnectedDevice
                     if (device != null) {
                         _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
                     }
                     onConnected(gatt)
                 } else {
-                    Log.e(TAG, "Services discovery failed: $status")
-                    // Discovery failed, disconnect
-                    gatt.disconnect()
+                    Log.e(TAG, "MTU negotiation failed: $status")
+                    // Still connect even if MTU negotiation fails
+                    val device = lastConnectedDevice
+                    if (device != null) {
+                        _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
+                    }
+                    onConnected(gatt)
                 }
             }
 
@@ -168,12 +183,17 @@ class BleConnection(
                         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                             if (status == BluetoothGatt.GATT_SUCCESS) {
                                 Log.i(TAG, "Reconnect services discovered")
-                                _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
-                                onConnected(gatt)
+                                gatt.requestMtu(247)
                             } else {
                                 Log.e(TAG, "Reconnect services discovery failed: $status")
                                 gatt.disconnect()
                             }
+                        }
+
+                        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+                            Log.i(TAG, "Reconnect MTU: $mtu")
+                            _connectionState.value = ConnectionState.Connected(device, lastConnectedName)
+                            onConnected(gatt)
                         }
 
                         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic, value: ByteArray) {
