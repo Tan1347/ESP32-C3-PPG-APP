@@ -43,7 +43,8 @@ data class DeviceWifiNetwork(
     val ssid: String,
     val isConnected: Boolean = false,
     val hasPassword: Boolean = true,
-    val priority: Int = 0
+    val priority: Int = 0,
+    val ip: String = ""  // Only populated for connected WiFi
 )
 
 sealed class ConnectionResult {
@@ -292,8 +293,10 @@ class WifiProvisionViewModel @Inject constructor(
     }
 
     /**
-     * Query device WiFi status (saved networks, connection status, IP)
-     * Strategy: Send command, then read characteristic to get full response
+     * Query device WiFi status - one by one
+     * 1. Query WiFi count via cmd 0x14
+     * 2. Query each WiFi details via cmd 0x15 + index
+     * 3. Unconnected WiFi returns connected=0, ip=""
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
@@ -302,17 +305,14 @@ class WifiProvisionViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // Step 1: Query WiFi list to get count
+                // Step 1: Get WiFi count from list response
                 val listSuccess = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
                 if (!listSuccess) {
                     _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询失败") }
                     return@launch
                 }
-
-                // Wait a bit for firmware to process
                 delay(200)
 
-                // Read the File List characteristic to get the full JSON
                 val listData = withTimeoutOrNull(3000L) {
                     bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
                 }
@@ -323,19 +323,14 @@ class WifiProvisionViewModel @Inject constructor(
                 }
 
                 val listJson = String(listData, Charsets.UTF_8)
-                Log.d(TAG, "WiFi list response: $listJson")
+                Log.d(TAG, "WiFi list: $listJson")
 
-                // Parse count and connection status
                 val listObj = org.json.JSONObject(listJson)
                 val count = listObj.optInt("count", 0)
-                val connected = listObj.optBoolean("connected", false)
-                val ip = listObj.optString("ip", "")
 
-                _state.update {
-                    it.copy(
-                        deviceWifiConnected = connected,
-                        deviceWifiIp = ip
-                    )
+                if (count == 0) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false) }
+                    return@launch
                 }
 
                 // Step 2: Query each WiFi details one by one
@@ -346,29 +341,43 @@ class WifiProvisionViewModel @Inject constructor(
                     )
                     if (!detailSuccess) break
 
-                    delay(200)  // Wait for firmware to process
+                    delay(200)
 
-                    // Read the File List characteristic to get the detail JSON
                     val detailData = withTimeoutOrNull(2000L) {
                         bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
                     }
 
                     if (detailData != null) {
                         val detailJson = String(detailData, Charsets.UTF_8)
-                        Log.d(TAG, "WiFi detail[$i]: $detailJson")
+                        Log.d(TAG, "WiFi[$i]: $detailJson")
                         val detailObj = org.json.JSONObject(detailJson)
+
+                        val ssid = detailObj.optString("ssid", "")
+                        val connected = detailObj.optBoolean("connected", false)
+                        val ip = detailObj.optString("ip", "")
+
                         networks.add(
                             DeviceWifiNetwork(
-                                ssid = detailObj.optString("ssid", ""),
+                                ssid = ssid,
+                                isConnected = connected,
                                 hasPassword = detailObj.optBoolean("has_pass", false),
-                                priority = detailObj.optInt("priority", 0)
+                                priority = detailObj.optInt("priority", 0),
+                                ip = if (connected) ip else ""  // Only show IP for connected WiFi
                             )
                         )
-                        // Update UI after each WiFi is queried
                         _state.update { it.copy(deviceSavedNetworks = networks.toList()) }
                     }
 
-                    delay(100)  // Small delay between queries
+                    delay(100)
+                }
+
+                // Set global connection status from the last connected WiFi
+                val connectedNetwork = networks.firstOrNull { it.isConnected }
+                _state.update {
+                    it.copy(
+                        deviceWifiConnected = connectedNetwork != null,
+                        deviceWifiIp = connectedNetwork?.ip ?: ""
+                    )
                 }
 
             } catch (e: Exception) {

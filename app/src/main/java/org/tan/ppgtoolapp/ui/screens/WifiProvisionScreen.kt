@@ -264,21 +264,41 @@ private fun DeviceWifiStatusCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 savedNetworks.forEach { network ->
-                    Row(
-                        modifier = Modifier.padding(start = 8.dp, top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(start = 8.dp, top = 4.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.Wifi,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            network.ssid,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (network.isConnected) Icons.Filled.CheckCircle else Icons.Filled.Wifi,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (network.isConnected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                network.ssid,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (network.isConnected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            if (network.isConnected) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "已连接",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        // Only show IP for connected WiFi
+                        if (network.isConnected && network.ip.isNotBlank()) {
+                            Text(
+                                "  IP: ${network.ip}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 22.dp)
+                            )
+                        }
                     }
                 }
             }
