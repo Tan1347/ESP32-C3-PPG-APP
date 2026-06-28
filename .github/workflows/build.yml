@@ -86,7 +86,7 @@ jobs:
             APK_PATH=$(find app/build/outputs/apk/release/ -name '*.apk' -print -quit 2>/dev/null)
             if [ -n "$APK_PATH" ]; then
               APK_BYTES=$(stat -c%s "$APK_PATH" 2>/dev/null || echo 0)
-              echo "APK size: $((APK_BYTES / 1024))KB"
+              echo "APK: $(basename $APK_PATH) ($((APK_BYTES / 1024))KB)"
             fi
           else
             echo "❌ Build failed"
