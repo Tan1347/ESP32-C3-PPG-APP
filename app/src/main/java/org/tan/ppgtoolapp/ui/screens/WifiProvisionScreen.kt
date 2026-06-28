@@ -95,6 +95,16 @@ fun WifiProvisionScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Device WiFi Status Card
+        DeviceWifiStatusCard(
+            isConnected = state.deviceWifiConnected,
+            ip = state.deviceWifiIp,
+            savedNetworks = state.deviceSavedNetworks,
+            isQuerying = state.isQueryingDeviceWifi,
+            onQueryStatus = { viewModel.queryDeviceWifiStatus() },
+            onConnectWiFi = { viewModel.triggerDeviceWifiConnect() }
+        )
+
         // 扫描和手动添加按钮
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -173,6 +183,115 @@ fun WifiProvisionScreen(
                     Spacer(Modifier.height(8.dp))
                     Text("点击上方按钮扫描附近 WiFi")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceWifiStatusCard(
+    isConnected: Boolean,
+    ip: String,
+    savedNetworks: List<org.tan.ppgtoolapp.viewmodel.DeviceWifiNetwork>,
+    isQuerying: Boolean,
+    onQueryStatus: () -> Unit,
+    onConnectWiFi: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "设备 WiFi 状态",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row {
+                    IconButton(onClick = onQueryStatus, enabled = !isQuerying) {
+                        if (isQuerying) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                }
+            }
+
+            if (isConnected) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "已连接",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (ip.isNotBlank()) {
+                    Text(
+                        "IP: $ip",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text(
+                    "未连接",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (savedNetworks.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "已保存的 WiFi:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                savedNetworks.forEach { network ->
+                    Row(
+                        modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Wifi,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            network.ssid,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onConnectWiFi,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isConnected && savedNetworks.isNotEmpty()
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("连接 WiFi")
             }
         }
     }

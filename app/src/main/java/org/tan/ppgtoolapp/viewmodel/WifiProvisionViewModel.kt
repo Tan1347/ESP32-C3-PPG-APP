@@ -30,7 +30,19 @@ data class WifiProvisionState(
     val showManualAddDialog: Boolean = false,
     val manualSsid: String = "",
     val manualPassword: String = "",
-    val error: String? = null
+    val error: String? = null,
+    // Device WiFi status
+    val deviceWifiConnected: Boolean = false,
+    val deviceWifiIp: String = "",
+    val deviceSavedNetworks: List<DeviceWifiNetwork> = emptyList(),
+    val isQueryingDeviceWifi: Boolean = false
+)
+
+data class DeviceWifiNetwork(
+    val ssid: String,
+    val isConnected: Boolean = false,
+    val hasPassword: Boolean = true,
+    val priority: Int = 0
 )
 
 sealed class ConnectionResult {
@@ -275,5 +287,108 @@ class WifiProvisionViewModel @Inject constructor(
 
     fun clearResult() {
         _state.update { it.copy(connectionResult = null) }
+    }
+
+    /**
+     * Query device WiFi status (saved networks, connection status, IP)
+     */
+    fun queryDeviceWifiStatus() {
+        if (!bleCommander.isConnected()) return
+
+        _state.update { it.copy(isQueryingDeviceWifi = true) }
+
+        viewModelScope.launch {
+            try {
+                // Send WiFi list query command
+                val success = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
+                if (!success) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询失败") }
+                    return@launch
+                }
+
+                // Wait for response on File List characteristic
+                val response = withTimeoutOrNull(3000L) {
+                    bleCommander.cmdResponse.first()
+                }
+
+                if (response != null) {
+                    val json = String(response, Charsets.UTF_8)
+                    Log.d(TAG, "Device WiFi status: $json")
+                    parseDeviceWifiStatus(json)
+                } else {
+                    // Try reading directly from File List characteristic
+                    val data = bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
+                    if (data != null) {
+                        val json = String(data, Charsets.UTF_8)
+                        Log.d(TAG, "Device WiFi list: $json")
+                        parseDeviceWifiStatus(json)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Query device WiFi failed: ${e.message}")
+            } finally {
+                _state.update { it.copy(isQueryingDeviceWifi = false) }
+            }
+        }
+    }
+
+    private fun parseDeviceWifiStatus(json: String) {
+        try {
+            val obj = org.json.JSONObject(json)
+            val connected = obj.optBoolean("connected", false)
+            val ip = obj.optString("ip", "")
+            val list = obj.optJSONArray("list")
+
+            val networks = mutableListOf<DeviceWifiNetwork>()
+            if (list != null) {
+                for (i in 0 until list.length()) {
+                    val item = list.getJSONObject(i)
+                    networks.add(
+                        DeviceWifiNetwork(
+                            ssid = item.optString("ssid", ""),
+                            hasPassword = item.optBoolean("has_pass", false),
+                            priority = item.optInt("priority", 0)
+                        )
+                    )
+                }
+            }
+
+            _state.update {
+                it.copy(
+                    deviceWifiConnected = connected,
+                    deviceWifiIp = ip,
+                    deviceSavedNetworks = networks
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Parse WiFi status failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Trigger device to connect to WiFi using saved credentials
+     */
+    fun triggerDeviceWifiConnect() {
+        if (!bleCommander.isConnected()) return
+
+        viewModelScope.launch {
+            try {
+                val success = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_START_WIFI))
+                if (success) {
+                    _state.update {
+                        it.copy(connectionResult = ConnectionResult.Success("已触发设备连接 WiFi..."))
+                    }
+                    // Wait a bit then query status
+                    delay(3000)
+                    queryDeviceWifiStatus()
+                } else {
+                    _state.update {
+                        it.copy(connectionResult = ConnectionResult.Error("发送失败"))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Trigger WiFi connect failed: ${e.message}")
+            }
+        }
     }
 }
