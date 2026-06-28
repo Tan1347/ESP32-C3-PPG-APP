@@ -57,6 +57,59 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      # ========== Version management ==========
+      - name: Calculate version
+        id: version
+        run: |
+          # Read current version from build.gradle.kts
+          GRADLE_VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          echo "Gradle version: $GRADLE_VERSION"
+          
+          # Get the last released version from git tags
+          LAST_RELEASED=$(git tag -l "v*" --sort=-version:refname | head -1 | sed 's/^v//')
+          echo "Last released: ${LAST_RELEASED:-none}"
+          
+          # Parse versions
+          IFS='.' read -r G_MAJOR G_MINOR G_PATCH <<< "$GRADLE_VERSION"
+          
+          if [ -n "$LAST_RELEASED" ]; then
+            IFS='.' read -r L_MAJOR L_MINOR L_PATCH <<< "$LAST_RELEASED"
+          else
+            L_MAJOR=0; L_MINOR=0; L_PATCH=0
+          fi
+          
+          # Decision logic:
+          # If user changed MAJOR or MINOR in build.gradle.kts, use that version
+          # If only PATCH changed or same, auto-increment patch
+          
+          if [ "$G_MAJOR" -gt "$L_MAJOR" ] || [ "$G_MINOR" -gt "$L_MINOR" ]; then
+            # User bumped major or minor version manually
+            NEW_VERSION="$GRADLE_VERSION"
+            echo "📌 User bumped to major/minor: $NEW_VERSION"
+          elif [ "$G_PATCH" -gt "$L_PATCH" ]; then
+            # User bumped patch manually, use it
+            NEW_VERSION="$GRADLE_VERSION"
+            echo "📌 User bumped patch: $NEW_VERSION"
+          else
+            # Auto-increment patch
+            NEW_PATCH=$((L_PATCH + 1))
+            NEW_VERSION="${L_MAJOR}.${L_MINOR}.${NEW_PATCH}"
+            echo "📌 Auto-incremented: $NEW_VERSION"
+          fi
+          
+          # Save to outputs
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "major=$(echo $NEW_VERSION | cut -d. -f1)" >> $GITHUB_OUTPUT
+          echo "minor=$(echo $NEW_VERSION | cut -d. -f2)" >> $GITHUB_OUTPUT
+          echo "patch=$(echo $NEW_VERSION | cut -d. -f3)" >> $GITHUB_OUTPUT
+          
+          # Update build.gradle.kts with new version
+          sed -i "s/versionName = \".*\"/versionName = \"$NEW_VERSION\"/" app/build.gradle.kts
+          echo "✅ Updated build.gradle.kts to version $NEW_VERSION"
+          
+          # Show new version
+          grep -n "versionName" app/build.gradle.kts
+
       - name: Start build timer
         id: build-start
         run: echo "time=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -94,23 +147,12 @@ jobs:
             echo "❌ Build failed"
           fi
 
-      - name: Extract versionName from build.gradle.kts
-        id: version
-        if: success()
-        run: |
-          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          if [ -z "$VERSION" ]; then
-            echo "❌ Failed to extract versionName from build.gradle.kts"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "📌 versionName = $VERSION"
-
+      # ========== Generate release notes ==========
       - name: Generate release notes
         id: release-notes
         if: success()
         run: |
-          CURRENT_VERSION="${{ steps.version.outputs.version }}"
+          CURRENT_VERSION="${{ steps.version.outputs.new }}"
           CURRENT_SHORT=$(git rev-parse --short HEAD)
           
           # Find previous release tag
@@ -118,7 +160,6 @@ jobs:
           
           if [ -n "$PREV_TAG" ]; then
             echo "Previous release: $PREV_TAG"
-            # Get commits between previous release and current HEAD (max 10)
             COMMITS=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..HEAD" -10)
           else
             echo "No previous release found, getting last 10 commits"
@@ -128,38 +169,44 @@ jobs:
           # Build release body (limit to 300 chars)
           RELEASE_BODY="Version: v${CURRENT_VERSION} (${CURRENT_SHORT})"$'\n\n'"Changes:"$'\n'"${COMMITS}"
           
-          # Truncate to 300 chars if needed
           if [ ${#RELEASE_BODY} -gt 300 ]; then
             RELEASE_BODY="${RELEASE_BODY:0:297}..."
           fi
           
-          # Write to file for multiline output
           echo "$RELEASE_BODY" > /tmp/release_body.txt
-          
-          echo "Release notes generated (${#RELEASE_BODY} chars)"
+          echo "📋 Release notes (${#RELEASE_BODY} chars):"
           cat /tmp/release_body.txt
 
+      # ========== Commit version update ==========
+      - name: Commit version update
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.new }} [skip ci]"
+          git push origin master
+
+      # ========== Delete old release ==========
       - name: Delete old release if tag exists
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          # Delete existing release (if any)
+          TAG="v${{ steps.version.outputs.new }}"
           RELEASE_ID=$(gh release view "$TAG" --json id -q '.id' 2>/dev/null || true)
           if [ -n "$RELEASE_ID" ]; then
-            echo "🗑️ Deleting old release $TAG (id=$RELEASE_ID)"
+            echo "🗑️ Deleting old release $TAG"
             gh release delete "$TAG" --yes --cleanup-tag
-          else
-            echo "✅ No existing release for $TAG"
           fi
 
+      # ========== Create release ==========
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.new }}
+          name: v${{ steps.version.outputs.new }}
           body_path: /tmp/release_body.txt
           files: app/build/outputs/apk/release/*.apk
           draft: false
