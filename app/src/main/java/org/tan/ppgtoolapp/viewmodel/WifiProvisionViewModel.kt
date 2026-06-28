@@ -293,7 +293,7 @@ class WifiProvisionViewModel @Inject constructor(
 
     /**
      * Query device WiFi status (saved networks, connection status, IP)
-     * Strategy: Query count first, then query each WiFi details one by one
+     * Strategy: Send command, then read characteristic to get full response
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
@@ -309,17 +309,20 @@ class WifiProvisionViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Wait for list response on File List characteristic
-                val listResponse = withTimeoutOrNull(3000L) {
-                    bleCommander.fileListData.first()
+                // Wait a bit for firmware to process
+                delay(200)
+
+                // Read the File List characteristic to get the full JSON
+                val listData = withTimeoutOrNull(3000L) {
+                    bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
                 }
 
-                if (listResponse == null) {
-                    _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询超时") }
+                if (listData == null) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false, error = "读取超时") }
                     return@launch
                 }
 
-                val listJson = String(listResponse, Charsets.UTF_8)
+                val listJson = String(listData, Charsets.UTF_8)
                 Log.d(TAG, "WiFi list response: $listJson")
 
                 // Parse count and connection status
@@ -343,12 +346,15 @@ class WifiProvisionViewModel @Inject constructor(
                     )
                     if (!detailSuccess) break
 
-                    val detailResponse = withTimeoutOrNull(2000L) {
-                        bleCommander.fileListData.first()
+                    delay(200)  // Wait for firmware to process
+
+                    // Read the File List characteristic to get the detail JSON
+                    val detailData = withTimeoutOrNull(2000L) {
+                        bleCommander.readCharacteristic(PpgGattProfile.CHAR_FILE_LIST)
                     }
 
-                    if (detailResponse != null) {
-                        val detailJson = String(detailResponse, Charsets.UTF_8)
+                    if (detailData != null) {
+                        val detailJson = String(detailData, Charsets.UTF_8)
                         Log.d(TAG, "WiFi detail[$i]: $detailJson")
                         val detailObj = org.json.JSONObject(detailJson)
                         networks.add(
