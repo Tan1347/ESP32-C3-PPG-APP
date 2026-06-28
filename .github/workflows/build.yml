@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -104,6 +106,39 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "📌 versionName = $VERSION"
 
+      - name: Generate release notes
+        id: release-notes
+        if: success()
+        run: |
+          CURRENT_VERSION="${{ steps.version.outputs.version }}"
+          CURRENT_SHORT=$(git rev-parse --short HEAD)
+          
+          # Find previous release tag
+          PREV_TAG=$(git tag -l "v*" --sort=-version:refname | grep -v "v${CURRENT_VERSION}" | head -1)
+          
+          if [ -n "$PREV_TAG" ]; then
+            echo "Previous release: $PREV_TAG"
+            # Get commits between previous release and current HEAD (max 10)
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..HEAD" -10)
+          else
+            echo "No previous release found, getting last 10 commits"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" HEAD -10)
+          fi
+          
+          # Build release body (limit to 300 chars)
+          RELEASE_BODY="Version: v${CURRENT_VERSION} (${CURRENT_SHORT})"$'\n\n'"Changes:"$'\n'"${COMMITS}"
+          
+          # Truncate to 300 chars if needed
+          if [ ${#RELEASE_BODY} -gt 300 ]; then
+            RELEASE_BODY="${RELEASE_BODY:0:297}..."
+          fi
+          
+          # Write to file for multiline output
+          echo "$RELEASE_BODY" > /tmp/release_body.txt
+          
+          echo "Release notes generated (${#RELEASE_BODY} chars)"
+          cat /tmp/release_body.txt
+
       - name: Delete old release if tag exists
         if: success()
         env:
@@ -125,6 +160,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
+          body_path: /tmp/release_body.txt
           files: app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
