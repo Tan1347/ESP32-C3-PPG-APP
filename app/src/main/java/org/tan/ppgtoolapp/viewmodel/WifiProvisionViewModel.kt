@@ -6,6 +6,7 @@ import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import org.tan.ppgtoolapp.data.ble.BleCommandProvider
+import org.tan.ppgtoolapp.data.ble.BleConnectionProvider
 import org.tan.ppgtoolapp.data.ble.PpgGattProfile
 import org.tan.ppgtoolapp.data.network.ApiResult
 import org.tan.ppgtoolapp.data.network.DeviceHttpApi
@@ -54,6 +55,7 @@ sealed class ConnectionResult {
 class WifiProvisionViewModel @Inject constructor(
     private val wifiScanner: WifiScanProvider,
     private val bleCommander: BleCommandProvider,
+    private val bleConnection: BleConnectionProvider,
     private val httpRepository: DeviceHttpApi
 ) : ViewModel() {
 
@@ -293,7 +295,7 @@ class WifiProvisionViewModel @Inject constructor(
      * Query device WiFi status (saved networks, connection status, IP)
      */
     fun queryDeviceWifiStatus() {
-        if (!bleCommander.isConnected()) return
+        if (!bleConnection.isConnected()) return
 
         _state.update { it.copy(isQueryingDeviceWifi = true) }
 
@@ -369,7 +371,7 @@ class WifiProvisionViewModel @Inject constructor(
      * Trigger device to connect to WiFi using saved credentials
      */
     fun triggerDeviceWifiConnect() {
-        if (!bleCommander.isConnected()) return
+        if (!bleConnection.isConnected()) return
 
         viewModelScope.launch {
             try {
