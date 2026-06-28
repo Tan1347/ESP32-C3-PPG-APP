@@ -159,3 +159,64 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ========== Cleanup old releases, tags, and workflow runs ==========
+      - name: Cleanup old releases and tags
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🗑️ Cleaning up old releases (keeping last 3)..."
+          
+          # Get releases sorted by creation date (newest first)
+          RELEASES=$(gh release list --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
+          
+          # Keep only the first 3, delete the rest
+          COUNT=0
+          for TAG in $RELEASES; do
+            COUNT=$((COUNT + 1))
+            if [ $COUNT -gt 3 ]; then
+              echo "  Deleting release: $TAG"
+              gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+            fi
+          done
+          
+          echo "🗑️ Cleaning up old tags (keeping last 3)..."
+          
+          # Get tags sorted by date (newest first)
+          TAGS=$(git tag -l "v*" --sort=-creatordate | head -20)
+          
+          # Keep only the first 3, delete the rest
+          COUNT=0
+          for TAG in $TAGS; do
+            COUNT=$((COUNT + 1))
+            if [ $COUNT -gt 3 ]; then
+              echo "  Deleting tag: $TAG"
+              git push origin --delete "$TAG" 2>/dev/null || true
+              git tag -d "$TAG" 2>/dev/null || true
+            fi
+          done
+          
+          echo "✅ Cleanup complete"
+
+      - name: Cleanup old workflow runs
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🗑️ Cleaning up old workflow runs (keeping last 3)..."
+          
+          # Get workflow runs for this workflow
+          RUNS=$(gh run list --workflow=build.yml --limit 100 --json databaseId,createdAt --jq 'sort_by(.createdAt) | reverse | .[].databaseId')
+          
+          # Keep only the first 3, delete the rest
+          COUNT=0
+          for RUN_ID in $RUNS; do
+            COUNT=$((COUNT + 1))
+            if [ $COUNT -gt 3 ]; then
+              echo "  Deleting run: $RUN_ID"
+              gh run delete "$RUN_ID" --yes 2>/dev/null || true
+            fi
+          done
+          
+          echo "✅ Workflow runs cleanup complete"
