@@ -107,7 +107,7 @@ class WifiProvisionViewModel @Inject constructor(
     /**
      * Build BLE command frame for Wi-Fi credentials
      * Format: [CMD_WIFI_ADD][ssid_len_h][ssid_len_l][ssid...][pwd_len_h][pwd_len_l][pwd]
-     * Note: Frame checksum is added by BleManager.buildFrame()
+     * Note: Frame header, length, and checksum are added by BleCommander.writeCommand()
      */
     private fun buildWifiCommand(ssid: String, password: String): ByteArray {
         val ssidBytes = ssid.toByteArray(StandardCharsets.UTF_8)

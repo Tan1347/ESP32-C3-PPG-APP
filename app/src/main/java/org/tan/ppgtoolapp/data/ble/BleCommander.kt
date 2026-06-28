@@ -77,10 +77,12 @@ class BleCommander {
         val char = service.getCharacteristic(PpgGattProfile.CHAR_COMMAND) ?: return false
 
         // Build frame: [0xAA][CMD][LEN][DATA...][CHECKSUM]
+        // command = [CMD][DATA...], LEN = data length only (excluding CMD)
+        val dataLen = command.size - 1
         val frame = ByteArray(3 + command.size)
         frame[0] = FRAME_HEADER
         frame[1] = command[0]
-        frame[2] = command.size.toByte()
+        frame[2] = dataLen.toByte()
         if (command.size > 1) {
             System.arraycopy(command, 1, frame, 3, command.size - 1)
         }
