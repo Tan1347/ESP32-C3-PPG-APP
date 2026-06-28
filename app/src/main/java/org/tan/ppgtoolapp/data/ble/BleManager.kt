@@ -102,19 +102,32 @@ class BleManager @Inject constructor(
     /**
      * Write a command
      */
-    override suspend fun writeCommand(command: ByteArray): Boolean =
-        commander.writeCommand(connection.bluetoothGatt, command)
+    override suspend fun writeCommand(command: ByteArray): Boolean {
+        val gatt = connection.bluetoothGatt
+        if (gatt == null || !connection.isConnected()) {
+            Log.w(TAG, "writeCommand: not connected")
+            return false
+        }
+        return commander.writeCommand(gatt, command)
+    }
 
     /**
      * Read a characteristic
      */
-    override suspend fun readCharacteristic(uuid: UUID): ByteArray? =
-        commander.readCharacteristic(connection.bluetoothGatt, uuid)
+    override suspend fun readCharacteristic(uuid: UUID): ByteArray? {
+        val gatt = connection.bluetoothGatt
+        if (gatt == null || !connection.isConnected()) {
+            Log.w(TAG, "readCharacteristic: not connected")
+            return null
+        }
+        return commander.readCharacteristic(gatt, uuid)
+    }
 
     /**
      * Query device status
      */
     override suspend fun queryDeviceStatus(): Boolean {
+        Log.d(TAG, "queryDeviceStatus: isConnected=${connection.isConnected()}, gatt=${connection.bluetoothGatt != null}")
         return writeCommand(byteArrayOf(0x22))
     }
 
