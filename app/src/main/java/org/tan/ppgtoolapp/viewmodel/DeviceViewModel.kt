@@ -62,7 +62,11 @@ class DeviceViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "扫描异常: ${e.message}", e)
+                if (e.message?.contains("cancelled") == true) {
+                    Log.d(TAG, "扫描已取消")
+                } else {
+                    Log.e(TAG, "扫描异常: ${e.message}")
+                }
             }
         }
     }
