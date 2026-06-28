@@ -47,7 +47,7 @@ class BleManager @Inject constructor(
     // Public state flows (delegated to sub-modules)
     override val connectionState: StateFlow<ConnectionState> = connection.connectionState
     override val liveData: SharedFlow<ByteArray> = commander.liveData
-    val statusData: SharedFlow<ByteArray> = commander.statusData
+    override val statusData: SharedFlow<ByteArray> = commander.statusData
     override val cmdResponse: SharedFlow<ByteArray> = commander.cmdResponse
 
     /**
