@@ -73,19 +73,20 @@ Device status information, **20 bytes fixed length**:
 ```
 Offset  Length  Field       Type    Description
 0       1       batt_pct    uint8   Battery percentage (0-100)
-1-3     3       reserved    uint8   Reserved (0x00)
-4       1       connected   uint8   WiFi status (0=disconnected, 1=connected)
+1-2     2       voltage     uint16  Voltage (big-endian, ×100 mV)
+3       1       reserved    uint8   Reserved (0x00)
+4       1       connected   uint8   BLE status (0=disconnected, 1=connected)
 5-19    15      version     char[]  Firmware version (UTF-8, null-padded)
 ```
 
 **Example data**:
 ```
-37 00 00 00 01 31 2E 30 2E 30 00 00 00 00 00 00 00 00 00 00
-│           │  └──────────────────────────────────────────────┘
-│           │  version: "1.0.0" (UTF-8, null-padded)
-│           connected: 1 (WiFi connected)
-│           reserved: 0
-batt_pct: 37 = 55%
+37 00 42 00 01 31 2E 30 2E 30 00 00 00 00 00 00 00 00 00 00
+│        │     │  └──────────────────────────────────────────────┘
+│        │     │  version: "1.0.0" (UTF-8, null-padded)
+│        │     connected: 1 (BLE connected)
+│        voltage: 0x0042 = 66 (×100mV = 6600mV = 6.6V)
+batt_pct: 55 = 55%
 ```
 
 #### 3.2 Live Data Characteristic (0xFFF2) - Notify
