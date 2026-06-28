@@ -293,36 +293,78 @@ class WifiProvisionViewModel @Inject constructor(
 
     /**
      * Query device WiFi status (saved networks, connection status, IP)
-     * Firmware sends JSON via notification on CHAR_FILE_LIST (0xFFF4)
+     * Strategy: Query count first, then query each WiFi details one by one
      */
     fun queryDeviceWifiStatus() {
         if (!bleConnection.isConnected()) return
 
-        _state.update { it.copy(isQueryingDeviceWifi = true) }
+        _state.update { it.copy(isQueryingDeviceWifi = true, deviceSavedNetworks = emptyList()) }
 
         viewModelScope.launch {
             try {
-                // Send WiFi list query command
-                val success = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
-                if (!success) {
+                // Step 1: Query WiFi list to get count
+                val listSuccess = bleCommander.writeCommand(byteArrayOf(PpgGattProfile.CMD_WIFI_LIST))
+                if (!listSuccess) {
                     _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询失败") }
                     return@launch
                 }
 
-                // Wait for notification on CHAR_FILE_LIST (0xFFF4)
-                // Firmware sends JSON via notification on this characteristic
-                val response = withTimeoutOrNull(3000L) {
+                // Wait for list response on File List characteristic
+                val listResponse = withTimeoutOrNull(3000L) {
                     bleCommander.fileListData.first()
                 }
 
-                if (response != null) {
-                    val json = String(response, Charsets.UTF_8)
-                    Log.d(TAG, "Device WiFi status: $json")
-                    parseDeviceWifiStatus(json)
-                } else {
-                    Log.w(TAG, "Timeout waiting for WiFi status response")
-                    _state.update { it.copy(error = "查询超时") }
+                if (listResponse == null) {
+                    _state.update { it.copy(isQueryingDeviceWifi = false, error = "查询超时") }
+                    return@launch
                 }
+
+                val listJson = String(listResponse, Charsets.UTF_8)
+                Log.d(TAG, "WiFi list response: $listJson")
+
+                // Parse count and connection status
+                val listObj = org.json.JSONObject(listJson)
+                val count = listObj.optInt("count", 0)
+                val connected = listObj.optBoolean("connected", false)
+                val ip = listObj.optString("ip", "")
+
+                _state.update {
+                    it.copy(
+                        deviceWifiConnected = connected,
+                        deviceWifiIp = ip
+                    )
+                }
+
+                // Step 2: Query each WiFi details one by one
+                val networks = mutableListOf<DeviceWifiNetwork>()
+                for (i in 0 until count) {
+                    val detailSuccess = bleCommander.writeCommand(
+                        byteArrayOf(PpgGattProfile.CMD_WIFI_DETAIL, i.toByte())
+                    )
+                    if (!detailSuccess) break
+
+                    val detailResponse = withTimeoutOrNull(2000L) {
+                        bleCommander.fileListData.first()
+                    }
+
+                    if (detailResponse != null) {
+                        val detailJson = String(detailResponse, Charsets.UTF_8)
+                        Log.d(TAG, "WiFi detail[$i]: $detailJson")
+                        val detailObj = org.json.JSONObject(detailJson)
+                        networks.add(
+                            DeviceWifiNetwork(
+                                ssid = detailObj.optString("ssid", ""),
+                                hasPassword = detailObj.optBoolean("has_pass", false),
+                                priority = detailObj.optInt("priority", 0)
+                            )
+                        )
+                        // Update UI after each WiFi is queried
+                        _state.update { it.copy(deviceSavedNetworks = networks.toList()) }
+                    }
+
+                    delay(100)  // Small delay between queries
+                }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Query device WiFi failed: ${e.message}")
             } finally {

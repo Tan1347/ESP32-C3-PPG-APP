@@ -28,6 +28,7 @@ object PpgGattProfile {
     const val CMD_WIFI_CLEAR: Byte = 0x12
     const val CMD_WIFI_DELETE: Byte = 0x13
     const val CMD_WIFI_LIST: Byte = 0x14
+    const val CMD_WIFI_DETAIL: Byte = 0x15    // Query WiFi details by index
     const val CMD_TIME_SYNC: Byte = 0x40      // 时间同步
     const val CMD_OTA_ENTER: Byte = 0x20
     const val CMD_FW_VERSION: Byte = 0x21

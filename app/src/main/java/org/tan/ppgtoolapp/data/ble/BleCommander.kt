@@ -49,6 +49,7 @@ class BleCommander {
         enableCharNotification(gatt, PpgGattProfile.CHAR_LIVE_DATA, "Live Data")
         enableCharNotification(gatt, PpgGattProfile.CHAR_STATUS, "Status")
         enableCharNotification(gatt, PpgGattProfile.CHAR_COMMAND, "Command")
+        enableCharNotification(gatt, PpgGattProfile.CHAR_FILE_LIST, "File List")
     }
 
     @SuppressLint("MissingPermission")
