@@ -28,7 +28,7 @@ class BleCommander {
     private val _liveData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 64)
     val liveData: SharedFlow<ByteArray> = _liveData.asSharedFlow()
 
-    private val _statusData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    private val _statusData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16, replay = 1)
     val statusData: SharedFlow<ByteArray> = _statusData.asSharedFlow()
 
     private val _cmdResponse = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
